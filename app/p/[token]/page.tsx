@@ -1,0 +1,66 @@
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { db } from "@/lib/db";
+import { hasCustomerSession } from "@/lib/auth/session";
+import { latestReadyVersion } from "@/lib/projects";
+import { storage } from "@/lib/storage";
+import { maskMobile } from "@/lib/validation";
+import { addressCustomer } from "@/lib/notify/address";
+import { Logo } from "@/components/Logo";
+import { DesignViewer } from "@/components/viewer/DesignViewer";
+import type { ShadingSummary } from "@/lib/scene/shading";
+import { OtpGate } from "./OtpGate";
+import { projectDetails } from "@/lib/details";
+
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Your solar design", referrer: "no-referrer" };
+
+export default async function CustomerPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const project = await db.project.findUnique({ where: { shareToken: token } });
+  if (!project) notFound();
+
+  if (!(await hasCustomerSession(project))) {
+    return <OtpGate token={token} maskedMobile={maskMobile(project.customerMobile)} />;
+  }
+
+  const version = await latestReadyVersion(project.id);
+  if (!version?.modelKey) {
+    return (
+      <main className="flex min-h-full items-center justify-center p-6 text-center">
+        <div className="card max-w-sm p-6">
+          <Logo />
+          <p className="mt-4 font-semibold">Dear {addressCustomer(project)},</p>
+          <p className="mt-2 text-sm text-gray-600">Your 3D design is being prepared. Please check again in a few minutes.</p>
+        </div>
+      </main>
+    );
+  }
+  const modelUrl = await storage().getUrl(version.modelKey, { expiresInSec: 6 * 3600 });
+
+  return (
+    <div className="flex h-dvh flex-col">
+      <header className="flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
+        <Logo className="text-sm" />
+        <div className="min-w-0 text-right">
+          <div className="truncate text-sm font-semibold">{project.systemSizeKw} kW · {project.code}</div>
+          <div className="text-xs text-gray-500">Design Version {version.number}</div>
+        </div>
+      </header>
+      <div className="border-b border-brand-100 bg-brand-50 px-4 py-1.5 text-xs text-gray-700">
+        Namaskar {addressCustomer(project)} — pick any month and time to see the sun and shadows on your roof.
+      </div>
+      <div className="min-h-0 flex-1">
+        <DesignViewer
+          modelUrl={modelUrl}
+          lat={project.latitude}
+          lng={project.longitude}
+          northOffsetDeg={project.northOffsetDeg}
+          summary={version.shadingSummary as unknown as ShadingSummary | null}
+          details={projectDetails(project, version)}
+          reportUrl={version.reportKey ? `/api/p/${token}/report` : undefined}
+        />
+      </div>
+    </div>
+  );
+}

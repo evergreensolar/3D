@@ -1,0 +1,369 @@
+// Evergreen Solar — Design Portal data model.
+// The whole model (all three phases) is defined up front so later phases need
+// only additive migrations. Tables marked [P2]/[P3] are not used by the Phase 1 UI yet.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- team
+
+enum Role {
+  ADMIN
+  DESIGNER
+  SALES
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         Role     @default(DESIGNER)
+  active       Boolean  @default(true)
+  // [P2] booking settings
+  slotMinutes  Int      @default(30)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  designedProjects Project[]        @relation("ProjectDesigner")
+  createdProjects  Project[]        @relation("ProjectCreatedBy")
+  uploads          DesignVersion[]
+  availability     WeeklyAvailability[]
+  timeOff          TimeOff[]
+  meetings         Meeting[]
+  comments         Comment[]
+  resolvedComments Comment[]        @relation("CommentResolvedBy")
+}
+
+// ---------------------------------------------------------------- projects
+
+enum ProjectStatus {
+  UPLOADED
+  SENT_TO_CUSTOMER
+  COMMENTS_PENDING
+  MEETING_BOOKED
+  REVISED
+  APPROVED
+}
+
+enum Salutation {
+  MR
+  MRS
+  MS
+  DR
+  NONE // address as "Sir/Ma'am"
+}
+
+model Project {
+  id                 String        @id @default(cuid())
+  code               String        @unique // EGS-2026-0001
+  status             ProjectStatus @default(UPLOADED)
+
+  customerName       String
+  customerSalutation Salutation    @default(NONE)
+  customerMobile     String        // E.164, e.g. +919830012345
+  customerEmail      String?
+  address            String
+  latitude           Float
+  longitude          Float
+  // Rotation (degrees, clockwise) from the model's "north" (SketchUp green axis) to true north.
+  northOffsetDeg     Float         @default(0)
+
+  systemSizeKw       Float
+  panelCount         Int
+  panelMake          String
+  panelModel         String
+  panelWattage       Int?
+  structureHeightM   Float
+  structureType      String
+
+  // Secret for the customer link /p/<shareToken>. Rotatable.
+  shareToken         String        @unique
+  sentToCustomerAt   DateTime?
+
+  designerId         String?
+  designer           User?         @relation("ProjectDesigner", fields: [designerId], references: [id])
+  createdById        String
+  createdBy          User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  versions      DesignVersion[]
+  events        ProjectEvent[]
+  otps          OtpChallenge[]
+  comments      Comment[]
+  meetings      Meeting[]
+  notifications Notification[]
+  approvals     Approval[]
+
+  @@index([status])
+  @@index([designerId])
+  @@index([createdAt])
+}
+
+enum VersionStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum ModelFormat {
+  GLB
+  DAE
+  ZIP // .dae + textures in a zip
+}
+
+model DesignVersion {
+  id                 String        @id @default(cuid())
+  projectId          String
+  project            Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number             Int           // 1, 2, 3 ...
+  status             VersionStatus @default(QUEUED)
+  changeNotes        String?       // "what changed" written by the designer
+
+  originalKey        String        // storage key of the SketchUp export
+  originalFormat     ModelFormat
+  originalFilename   String
+  originalBytes      Int
+
+  modelKey           String?       // optimised GLB served to viewers
+  modelBytes         Int?
+  reportKey          String?       // PDF report
+  // [{ key, label, kind: "view" | "shading", month?, hour? }]
+  snapshots          Json?
+  // { months: [{ month: 1..12, shadedPct }], hours: [...], method, samplesPerPanel, computedAt }
+  shadingSummary     Json?
+  detectedPanelCount Int?
+  // { min:[x,y,z], max:[x,y,z] } metres, Y-up
+  bbox               Json?
+  processingLog      String?
+  processingError    String?
+  processedAt        DateTime?
+
+  // [P3] approval lock
+  lockedAt           DateTime?
+
+  uploadedById       String
+  uploadedBy         User          @relation(fields: [uploadedById], references: [id])
+  createdAt          DateTime      @default(now())
+
+  comments  Comment[]
+  approvals Approval[]
+
+  @@unique([projectId, number])
+}
+
+model ProjectEvent {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      String   // version.uploaded, version.ready, report.sent, customer.verified, ...
+  actor     String   // "user:<id>" | "customer" | "system"
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+// ---------------------------------------------------------------- background jobs
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Job {
+  id        String    @id @default(cuid())
+  type      String    // process_version | send_notification [P2] | meeting_reminder [P2]
+  payload   Json
+  status    JobStatus @default(PENDING)
+  attempts  Int       @default(0)
+  maxAttempts Int     @default(3)
+  runAfter  DateTime  @default(now())
+  lockedAt  DateTime?
+  lastError String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status, runAfter])
+}
+
+// ---------------------------------------------------------------- customer OTP
+
+enum OtpPurpose {
+  VIEW_ACCESS
+  APPROVAL // [P3]
+}
+
+model OtpChallenge {
+  id         String     @id @default(cuid())
+  projectId  String
+  project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mobile     String
+  purpose    OtpPurpose
+  codeHash   String     // HMAC-SHA256(code), never the plain code
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime   @default(now())
+
+  approval Approval?
+
+  @@index([projectId, purpose, createdAt])
+}
+
+// ---------------------------------------------------------------- [P2] comments
+
+enum AuthorType {
+  CUSTOMER
+  TEAM
+}
+
+model Comment {
+  id           String        @id @default(cuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionId    String
+  version      DesignVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  parentId     String?       // replies
+  parent       Comment?      @relation("Thread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      Comment[]     @relation("Thread")
+  authorType   AuthorType
+  authorUserId String?
+  authorUser   User?         @relation(fields: [authorUserId], references: [id])
+  body         String
+  // null = general comment; otherwise { point:[x,y,z], normal:[x,y,z], meshName, camera:{position,target} }
+  anchor       Json?
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?         @relation("CommentResolvedBy", fields: [resolvedById], references: [id])
+  createdAt    DateTime      @default(now())
+
+  @@index([projectId, versionId])
+}
+
+// ---------------------------------------------------------------- [P2] scheduling
+
+model WeeklyAvailability {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekday     Int    // 0=Sun .. 6=Sat (IST)
+  startMinute Int    // minutes after 00:00 IST, e.g. 660 = 11:00
+  endMinute   Int    // e.g. 1140 = 19:00
+
+  @@index([userId])
+}
+
+model TimeOff {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startsAt DateTime // a full leave day is stored as [00:00, 24:00) IST
+  endsAt   DateTime
+  reason   String?
+
+  @@index([userId, startsAt])
+}
+
+enum MeetingStatus {
+  BOOKED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+model Meeting {
+  id           String        @id @default(cuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  designerId   String
+  designer     User          @relation(fields: [designerId], references: [id])
+  startsAt     DateTime
+  endsAt       DateTime
+  status       MeetingStatus @default(BOOKED)
+  bookedBy     AuthorType
+  videoProvider String       // "jitsi-public" | "jitsi-self-hosted" ...
+  roomName     String        @unique
+  notes        String?       // meeting notes added after the call
+  cancelReason String?
+  rescheduledFromId String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Double-booking is prevented by a Postgres exclusion constraint added in the P2 migration:
+  // EXCLUDE USING gist ("designerId" WITH =, tstzrange("startsAt","endsAt") WITH &&) WHERE (status = 'BOOKED')
+  @@index([designerId, startsAt])
+}
+
+// ---------------------------------------------------------------- notifications
+
+enum Channel {
+  WHATSAPP
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model Notification {
+  id                String             @id @default(cuid())
+  projectId         String?
+  project           Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  channel           Channel
+  provider          String
+  to                String
+  template          String             // otp, report_ready, new_version, meeting_reminder ...
+  body              String
+  status            NotificationStatus @default(QUEUED)
+  providerMessageId String?
+  error             String?
+  sentAt            DateTime?
+  createdAt         DateTime           @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+// ---------------------------------------------------------------- [P3] approval
+
+model Approval {
+  id             String        @id @default(cuid())
+  projectId      String
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionId      String
+  version        DesignVersion @relation(fields: [versionId], references: [id])
+  versionNumber  Int
+  customerName   String
+  customerMobile String
+  consentText    String
+  videoKey       String
+  videoMime      String
+  videoBytes     Int
+  videoSha256    String        // hex SHA-256 of the exact stored bytes
+  recordHash     String        // SHA-256 over the canonical JSON of this record (tamper evidence)
+  otpChallengeId String        @unique
+  otpChallenge   OtpChallenge  @relation(fields: [otpChallengeId], references: [id])
+  ip             String?
+  userAgent      String?
+  deviceInfo     Json?
+  approvedAt     DateTime      @default(now())
+
+  @@index([projectId])
+}
