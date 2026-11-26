@@ -1,5 +1,14 @@
 // Generates the customer-facing design report PDF (runs in the worker).
 import PDFDocument from "pdfkit";
+import * as pdfkitModule from "pdfkit";
+import Helvetica from "pdfkit/standard-fonts/Helvetica";
+import HelveticaBold from "pdfkit/standard-fonts/HelveticaBold";
+
+// Register the fonts explicitly: some hosts (e.g. Hostinger) bundle server code into one file,
+// and pdfkit then cannot find its built-in font files on disk.
+const registerStdFonts = (pdfkitModule as unknown as { registerStdFonts?: (...f: unknown[]) => void }).registerStdFonts;
+if (typeof registerStdFonts !== "function") throw new Error("pdfkit.registerStdFonts is missing — check the pdfkit version");
+registerStdFonts(Helvetica, HelveticaBold);
 import QRCode from "qrcode";
 import type { Project, DesignVersion } from "@prisma/client";
 import type { ShadingSummary } from "@/lib/scene/shading";
