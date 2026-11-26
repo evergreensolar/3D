@@ -14,7 +14,9 @@ export const env = {
     return s;
   },
   get isProd() { return process.env.NODE_ENV === "production"; },
-  get devShowOtp() { return !this.isProd && opt("DEV_SHOW_OTP") === "true" && opt("SMS_PROVIDER", "console") === "console"; },
+  // Shows the OTP on screen. Only possible while SMS_PROVIDER=console (nothing is really sent).
+  // Turn off before giving links to real customers.
+  get devShowOtp() { return opt("DEV_SHOW_OTP") === "true" && opt("SMS_PROVIDER", "console") === "console"; },
   opt,
   req,
 };

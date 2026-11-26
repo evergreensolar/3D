@@ -113,6 +113,18 @@ A single small VPS (2 vCPU / 4 GB, e.g. in Mumbai) is enough to start.
 The app can also run on Vercel with an external worker, but the worker needs a long-running machine with
 Chromium, so a VPS is simpler.
 
+### Hostinger (managed Node.js hosting)
+
+- Build command `npm run build` (it also applies database migrations). Start command `npm start`. Node 22.
+- Environment variables: paste only the 5 REQUIRED lines from `.env.example`. Delete any other keys the
+  importer added, because Hostinger refuses empty values.
+- Hostinger provides MySQL, not PostgreSQL. Use a free PostgreSQL such as Supabase (Mumbai region), and copy the
+  **Session pooler** connection string into `DATABASE_URL`.
+- No seed is needed: sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` and the first admin account is created automatically.
+- **Limitation:** the processing worker (headless Chromium) cannot run on managed hosting, so uploads stay at
+  "Processing". Run the worker on a VPS (e.g. Hostinger KVM), or host the whole app on a VPS as described above.
+- Local storage may be wiped on redeploy; use `STORAGE_DRIVER=s3` (e.g. Cloudflare R2) for real projects.
+
 ## 6. Project layout
 
 ```
