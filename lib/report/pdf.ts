@@ -130,14 +130,15 @@ export async function buildReportPdf(o: {
     return h + 34;
   };
   {
-    const w = pageW;
-    let yy = doc.y;
-    // 3 remaining views stacked as a 1 + 2 layout
+    // remaining views in a 2-column grid (4 sides, front, side, top)
     const rest = views.slice(1);
-    if (rest[0]) yy += gridImg(rest[0], 40, yy, w * 0.75 + 0) + 6;
-    const half = (w - 12) / 2;
-    if (rest[1]) gridImg(rest[1], 40, yy, half);
-    if (rest[2]) gridImg(rest[2], 40 + half + 12, yy, half);
+    const half = (pageW - 12) / 2;
+    let yy = doc.y;
+    for (let i = 0; i < rest.length; i += 2) {
+      const h1 = gridImg(rest[i], 40, yy, half);
+      const h2 = rest[i + 1] ? gridImg(rest[i + 1], 40 + half + 12, yy, half) : 0;
+      yy += Math.max(h1, h2) + 2;
+    }
   }
 
   // ---------------- Page 3: shading snapshots

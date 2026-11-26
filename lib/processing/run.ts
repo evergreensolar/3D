@@ -45,12 +45,13 @@ export async function runProcessing(p: ProcessingInput, say: (m: string) => void
 
     const scene = new THREE.Scene();
     scene.add(stage.group);
-    const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, stage.radius * 50);
+    const camera = new THREE.PerspectiveCamera(40, W / H, Math.max(0.05, stage.focusRadius / 300), Math.max(stage.radius * 50, stage.hasTerrain ? 3000 : 0));
     const north = new THREE.Vector3(...bearingVector(0, p.northOffsetDeg));
     const shot = (view: ViewName) => {
-      camera.position.copy(stage.viewPosition(view, camera.fov, W / H));
+      // close-up on the panels (with the roof around them), not the whole site / terrain
+      camera.position.copy(stage.viewPositionAt(view, camera.fov, W / H, stage.focus, stage.focusRadius));
       camera.up.copy(view === "top" ? north : new THREE.Vector3(0, 1, 0));
-      camera.lookAt(stage.center);
+      camera.lookAt(stage.focus);
       scene.background = stage.skyColor();
       renderer.render(scene, camera);
       return renderer.domElement.toDataURL("image/jpeg", 0.86);
@@ -60,7 +61,7 @@ export async function runProcessing(p: ProcessingInput, say: (m: string) => void
     const snapshots: ProcessingOutput["snapshots"] = [];
     stage.setHighlight(false);
     stage.setTime(istDate(SIM_YEAR, 3, 20, 10.5));
-    for (const v of ["se", "sw", "south", "top"] as ViewName[]) {
+    for (const v of ["se", "sw", "ne", "nw", "south", "east", "top"] as ViewName[]) {
       snapshots.push({ name: `view-${v}`, label: VIEWS[v].label, kind: "view", dataUrl: shot(v) });
     }
     stage.setHighlight(true);

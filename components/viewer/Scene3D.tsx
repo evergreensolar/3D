@@ -72,13 +72,11 @@ function StageNode({ url, opts, panels, date, highlight, onSun, onReady, onHeadi
   const home = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera;
-    const pb = stage.panelsBox();
-    const focus = pb ? pb.getCenter(new THREE.Vector3()) : stage.center.clone();
-    // a little wider than the array so the roof around it is visible too
-    const focusR = pb ? Math.min(stage.radius, Math.max(7, (pb.getSize(new THREE.Vector3()).length() / 2) * 2.3)) : stage.radius;
+    const focus = stage.focus.clone();
+    const focusR = stage.focusRadius;
     cam.position.copy(stage.viewPositionAt("se", cam.fov, size.width / size.height, focus, focusR));
-    cam.near = Math.max(0.05, stage.radius / 200);
-    cam.far = stage.radius * 60;
+    cam.near = Math.max(0.05, stage.focusRadius / 300);
+    cam.far = Math.max(stage.radius * 60, stage.hasTerrain ? 3000 : 0);
     cam.updateProjectionMatrix();
     const c = controls as unknown as OrbitControlsImpl | null;
     if (c) {

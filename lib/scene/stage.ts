@@ -97,14 +97,33 @@ export class DesignStage {
   readonly engine: ShadingEngine;
   readonly overlays: THREE.Mesh[] = [];
   readonly groundY: number;
+  /** Centre / radius of the area to look at first: the panels with the roof around them. */
+  readonly focus = new THREE.Vector3();
+  focusRadius = 10;
+  hasTerrain = false;
   highlight = true;
   last: SunResult | null = null;
 
   constructor(readonly model: THREE.Object3D, readonly opts: StageOptions) {
     prepareModel(model);
     this.group.add(model);
-    this.bbox.setFromObject(model);
-    if (this.bbox.isEmpty()) throw new Error("The model is empty");
+    // The "site" = everything except a large flat terrain (e.g. SketchUp Geo-location satellite
+    // ground, often hundreds of metres wide). Framing and shadows use the site, not the terrain.
+    const all = new THREE.Box3().setFromObject(model);
+    if (all.isEmpty()) throw new Error("The model is empty");
+    const site = new THREE.Box3();
+    const mb = new THREE.Box3();
+    const ms = new THREE.Vector3();
+    model.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mb.setFromObject(mesh);
+      mb.getSize(ms);
+      const terrain = Math.max(ms.x, ms.z) > 80 && ms.y < 3;
+      if (terrain) { mesh.userData.evgTerrain = true; this.hasTerrain = true; }
+      else site.union(mb);
+    });
+    this.bbox.copy(site.isEmpty() ? all : site);
     this.bbox.getCenter(this.center);
     this.radius = Math.max(this.bbox.getSize(new THREE.Vector3()).length() / 2, 1);
     this.groundY = this.bbox.min.y;
@@ -113,16 +132,26 @@ export class DesignStage {
     this.panels = opts.panels?.length ? opts.panels : detectPanels(model, opts.tags);
     this.engine = new ShadingEngine(model, this.panels);
 
-    // Lights
+    // Focus = the solar panels with some roof around them (whole site if there are no panels).
+    const pb = this.panelsBox();
+    if (pb) {
+      pb.getCenter(this.focus);
+      this.focusRadius = Math.min(this.radius, Math.max(7, (pb.getSize(new THREE.Vector3()).length() / 2) * 2.3));
+    } else {
+      this.focus.copy(this.center);
+      this.focusRadius = this.radius;
+    }
+
+    // Lights — the shadow map covers the area around the panels at high resolution.
     const s = this.sunLight;
     s.castShadow = true;
     s.shadow.mapSize.set(opts.shadowMapSize ?? 2048, opts.shadowMapSize ?? 2048);
-    const r = this.radius * 1.05;
-    Object.assign(s.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 0.1, far: this.radius * 8 });
+    const r = Math.max(this.focusRadius * 2.2, Math.min(this.radius * 1.05, 40));
+    Object.assign(s.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 0.1, far: this.radius * 8 + r * 2 });
     s.shadow.camera.updateProjectionMatrix();
     s.shadow.bias = -0.0002;
-    s.shadow.normalBias = Math.min(0.05, this.radius * 0.002);
-    s.target.position.copy(this.center);
+    s.shadow.normalBias = Math.min(0.04, r * 0.0015);
+    s.target.position.copy(this.focus);
     this.group.add(s, s.target, this.hemi);
 
     // Ground
@@ -135,7 +164,8 @@ export class DesignStage {
     ground.receiveShadow = true;
     ground.userData.evgHelper = true;
     ground.name = "__ground";
-    this.group.add(ground);
+    // A model with its own terrain gets no extra ground (two overlapping grounds flicker).
+    if (!this.hasTerrain) this.group.add(ground);
 
     // Compass rose on the ground, pointing to true north
     const size = Math.max(1.2, this.radius * 0.18);
@@ -181,7 +211,8 @@ export class DesignStage {
   setTime(date: Date): SunResult {
     const sun = sunState(date, this.opts.lat, this.opts.lng, this.opts.northOffsetDeg);
     const [dx, dy, dz] = sun.direction;
-    this.sunLight.position.set(this.center.x + dx * this.radius * 3, this.center.y + dy * this.radius * 3, this.center.z + dz * this.radius * 3);
+    const L = this.radius * 3 + 10;
+    this.sunLight.position.set(this.focus.x + dx * L, this.focus.y + dy * L, this.focus.z + dz * L);
     const elev = Math.max(0, Math.sin((sun.altitudeDeg * Math.PI) / 180));
     this.sunLight.intensity = sun.up ? 0.6 + 2.6 * Math.min(1, elev * 1.6) : 0;
     this.sunLight.color.setHSL(0.1, 0.9 - 0.6 * Math.min(1, elev * 2), 0.6 + 0.35 * Math.min(1, elev * 2));
@@ -259,12 +290,15 @@ export class DesignStage {
   }
 }
 
-export type ViewName = "se" | "sw" | "south" | "top" | "shading";
+export type ViewName = "se" | "sw" | "ne" | "nw" | "south" | "east" | "top" | "shading";
 /** bearing = compass direction the camera looks FROM. */
 export const VIEWS: Record<ViewName, { label: string; bearing: number; elevation: number; zoom: number }> = {
   se: { label: "View from south-east", bearing: 135, elevation: 32, zoom: 0.62 },
   sw: { label: "View from south-west", bearing: 225, elevation: 32, zoom: 0.62 },
-  south: { label: "South elevation", bearing: 180, elevation: 8, zoom: 0.62 },
+  ne: { label: "View from north-east", bearing: 45, elevation: 32, zoom: 0.62 },
+  nw: { label: "View from north-west", bearing: 315, elevation: 32, zoom: 0.62 },
+  south: { label: "Front (south) view", bearing: 180, elevation: 10, zoom: 0.62 },
+  east: { label: "Side (east) view", bearing: 90, elevation: 10, zoom: 0.62 },
   top: { label: "Top view (north up)", bearing: 0, elevation: 90, zoom: 0.55 },
   shading: { label: "Shading view", bearing: 165, elevation: 50, zoom: 0.58 },
 };
