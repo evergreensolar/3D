@@ -18,6 +18,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
             <Link href="/team" className="btn-ghost px-2 py-2 sm:px-3">Projects</Link>
             <Link href="/team/calendar" className="btn-ghost px-2 py-2 sm:px-3">Calendar</Link>
             <Link href="/team/availability" className="btn-ghost hidden px-3 py-2 sm:inline-flex">Availability</Link>
+            {user.role === "ADMIN" && <Link href="/team/library" className="btn-ghost hidden px-3 py-2 sm:inline-flex">Library</Link>}
             {user.role === "ADMIN" && <Link href="/team/users" className="btn-ghost hidden px-3 py-2 sm:inline-flex">Team</Link>}
             {user.role !== "SALES" && <Link href="/team/projects/new" className="btn-primary px-3 py-2">+ New</Link>}
             <form action={logout}>

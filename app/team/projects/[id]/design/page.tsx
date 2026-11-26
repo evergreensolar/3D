@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireTeamUser } from "@/lib/auth/session";
-import type { Design } from "@/lib/design/types";
+import { listTemplates } from "@/lib/library";
 import { DesignStudio } from "@/components/studio/DesignStudio";
 
 export const metadata = { title: "Design Studio" };
@@ -11,7 +11,7 @@ export const metadata = { title: "Design Studio" };
 const TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 export default async function DesignPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireTeamUser(["ADMIN", "DESIGNER"]);
+  const user = await requireTeamUser(["ADMIN", "DESIGNER"]);
   const { id } = await params;
   const project = await db.project.findUnique({ where: { id } });
   if (!project) notFound();
@@ -24,7 +24,9 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
       lat={project.latitude}
       lng={project.longitude}
       defaultWp={project.panelWattage ?? 550}
-      initial={(last?.designJson as Design | null) ?? null}
+      initial={last?.designJson ?? null}
+      templates={(await listTemplates()).map(({ description: _d, active: _a, ...t }) => t)}
+      isAdmin={user.role === "ADMIN"}
       tileUrl={process.env.MAP_TILE_URL || TILE_URL}
       attribution={process.env.MAP_ATTRIBUTION || "Imagery © Esri, Maxar, Earthstar Geographics"}
     />

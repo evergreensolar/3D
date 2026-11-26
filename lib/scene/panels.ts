@@ -441,3 +441,10 @@ export function deserializePanels(f: PanelsFile): Panel[] {
     samples: new Float32Array(p.samples), sampleNormals: new Float32Array(p.sampleNormals),
   }));
 }
+
+/** Panel rating written in a name, e.g. "Solar Panel 615Wp#3" or "WAAREE_550W_Module" → 615 / 550. */
+export function wpFromName(name: string): number | null {
+  const m = name.match(/(\d{3,4})\s*_?w(?:p)?(?![a-z])/i);
+  const v = m ? Number(m[1]) : NaN;
+  return v >= 100 && v <= 1000 ? v : null;
+}

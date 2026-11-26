@@ -66,12 +66,25 @@ The new-project form can be pre-filled from a URL, for example when opened from 
 
 ## 3a. Design Studio (no SketchUp needed)
 
-When creating a project, choose **Design in the portal**. The studio shows the site on satellite imagery:
-trace the roof, set floors and parapet, add obstructions (stair room, water tank, neighbouring building, tree),
-set the panel Wp/size/tilt/direction/structure height/row gap/setback — panels fill the roof automatically and can be
-clicked off — and enter the inverter (DC/AC ratio is checked). Saving creates a design version that is processed
-exactly like an uploaded model. Satellite imagery: Esri World Imagery by default; set `MAP_TILE_URL` (with
-`{z}/{x}/{y}`) and `MAP_ATTRIBUTION` to use another provider such as Mapbox or Google Map Tiles (check the provider's terms).
+When creating a project, choose **Design in the portal**.
+
+- **Roof (site-survey accurate):** feet-and-inches or metres. Draw a **rectangle** from its sizes, **walk the edges**
+  (direction + length for each side; the last side closes itself), or **trace** on the satellite photo (snap to N/S/E/W).
+  Every side is labelled ("N 45′ 0″") and editable; a rectangle stays a rectangle. Nudge/rotate the outline to line it
+  up with the photo. Floors, floor height, parapet; **flat** or **sloped** roof (slope ° and down-slope direction).
+  📏 **Measure** any distance on the plan.
+- **Structures:** drag onto the roof (or click, then click the roof):
+  - **Adjustable structure** — rows × panels per row (+/−), Wp, tilt, facing, structure height, portrait/landscape,
+    row gap; click a panel to remove/restore it; "Flush on the sloped roof".
+  - **Ready-made structures** from the **Structure library** (admin → Library): upload a SketchUp GLB of a structure with
+    modules; the portal counts the modules, reads the Wp from their names, measures the footprint and makes a thumbnail.
+    In the studio: move, rotate (±5/15/90°), copies side by side, duplicate, delete.
+  - Structures outside the roof or on an obstruction are shown in red. "Fill the roof automatically" still works.
+  - Mixed ratings are fine: each panel is named "Solar Panel <Wp>Wp" and the total kWp is the sum.
+- **Obstructions** (stair room, tank, neighbouring building, tree…), **inverter** with DC/AC check, live **3D view**.
+- Saving creates a design version processed exactly like an uploaded model. Satellite imagery: Esri World Imagery by
+  default; set `MAP_TILE_URL` (with `{z}/{x}/{y}`) and `MAP_ATTRIBUTION` for another provider.
+- Example library file: `public/samples/structure-2x3-550.glb` (elevated GI, 2 × 3 modules of 550 Wp).
 
 Revised designs: upload a new SketchUp export from the project page (**Upload revised model**) or save again from the
 Studio — each creates Version N+1; the customer link shows the newest version.

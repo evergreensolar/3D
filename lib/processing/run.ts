@@ -9,7 +9,7 @@ import { DesignStage, VIEWS, type ViewName } from "@/lib/scene/stage";
 import { bearingVector, sunState, SIM_YEAR } from "@/lib/scene/sun";
 import { estimateEnergy } from "@/lib/energy/model";
 import { measureLayout } from "@/lib/scene/layout";
-import { serializePanels } from "@/lib/scene/panels";
+import { serializePanels, wpFromName } from "@/lib/scene/panels";
 import { istDate } from "@/lib/time";
 import type { ProcessingInput, ProcessingOutput } from "./types";
 
@@ -29,7 +29,9 @@ export async function runProcessing(p: ProcessingInput, say: (m: string) => void
   note("Finding the solar panels");
   const stage = new DesignStage(root, { lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, shadowMapSize: 4096, tags: p.tags });
   // Each panel's rating: its own tag, else the project default.
-  stage.panels.forEach((x) => { if (!x.wp && p.defaultWp) x.wp = p.defaultWp; });
+  stage.panels.forEach((x) => {
+    if (!x.wp) x.wp = wpFromName(x.name) ?? p.defaultWp ?? undefined; // "Solar Panel 615Wp#3" → 615
+  });
   const knownWp = stage.panels.length > 0 && stage.panels.every((x) => !!x.wp);
   const totalWp = knownWp ? stage.panels.reduce((sum, x) => sum + (x.wp ?? 0), 0) : null;
   note(`Panels: ${stage.panels.length}${p.tags?.length ? " (tagged by designer)" : " (auto-detected)"}${totalWp ? `, ${totalWp / 1000} kWp` : ""}`);

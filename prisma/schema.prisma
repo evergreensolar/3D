@@ -387,3 +387,21 @@ model Approval {
 
   @@index([projectId])
 }
+
+// ---------------------------------------------------------------- Design Studio structure library
+
+/** Ready-made "structure with modules" models (GLB) that designers drop onto roofs in the Design Studio. */
+model StructureTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  wp          Int      // rating of each module
+  panelCount  Int
+  // footprint / offsets / module rectangles / module node paths (see TemplateMeta in lib/design/types.ts)
+  meta        Json
+  modelKey    String
+  thumbKey    String?
+  active      Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+}
