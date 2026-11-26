@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
+import { isConfigured } from "@/lib/config";
 import { hasCustomerSession } from "@/lib/auth/session";
 import { latestReadyVersion } from "@/lib/projects";
 import { storage } from "@/lib/storage";
@@ -17,6 +18,7 @@ export const metadata: Metadata = { title: "Your solar design", referrer: "no-re
 
 export default async function CustomerPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  if (!isConfigured()) notFound();
   const project = await db.project.findUnique({ where: { shareToken: token } });
   if (!project) notFound();
 

@@ -3,6 +3,9 @@ import { requireTeamUser } from "@/lib/auth/session";
 import { logout } from "@/app/login/actions";
 import { Logo } from "@/components/Logo";
 
+// Never pre-render team pages at build time (the database is configured at runtime via /setup).
+export const dynamic = "force-dynamic";
+
 export default async function TeamLayout({ children }: { children: React.ReactNode }) {
   const user = await requireTeamUser();
   return (

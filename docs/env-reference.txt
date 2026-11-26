@@ -1,0 +1,28 @@
+# Optional environment variables (reference only).
+#
+# Nothing here is required: on first visit the portal opens /setup, which asks for the MySQL
+# database details and creates the admin login. Settings are saved in ~/.evergreen-portal/config.json.
+# Any variable below, if set on the host, overrides the saved setting.
+#
+# DATABASE_URL="mysql://USER:PASSWORD@localhost:3306/DBNAME"
+# APP_URL="https://design.example.com"
+# SESSION_SECRET="at-least-32-random-characters"
+# EVG_DATA_DIR="/path/for/config-and-uploads"   # default ~/.evergreen-portal
+# DEV_SHOW_OTP="true"          # show OTP on screen while SMS_PROVIDER=console (testing only)
+#
+# STORAGE_DRIVER="local"       # local | s3
+# STORAGE_LOCAL_DIR=""         # default <data dir>/storage
+# S3_BUCKET=""  S3_REGION="ap-south-1"  S3_ENDPOINT=""  S3_ACCESS_KEY_ID=""  S3_SECRET_ACCESS_KEY=""  S3_FORCE_PATH_STYLE="false"
+#
+# SMS_PROVIDER="console"       # console | msg91 | twilio
+# MSG91_AUTH_KEY=""  MSG91_OTP_TEMPLATE_ID=""  MSG91_FLOW_TEMPLATE_ID=""
+# TWILIO_ACCOUNT_SID=""  TWILIO_AUTH_TOKEN=""  TWILIO_FROM=""
+#
+# WHATSAPP_PROVIDER="console"  # console | meta | webhook
+# META_WA_TOKEN=""  META_WA_PHONE_NUMBER_ID=""  WA_TEMPLATE_<NAME>=""  WA_TEMPLATE_LANG="en"
+# WHATSAPP_WEBHOOK_URL=""  WHATSAPP_WEBHOOK_TOKEN=""
+#
+# EMAIL_PROVIDER="console"     # console | smtp
+# SMTP_HOST=""  SMTP_PORT="587"  SMTP_USER=""  SMTP_PASS=""  EMAIL_FROM="Evergreen Solar <design@example.com>"
+#
+# CHROMIUM_PATH=""             # optional server worker (VPS) only

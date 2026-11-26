@@ -15,10 +15,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   if (status && status in STATUS_LABEL) where.status = status as ProjectStatus;
   if (q) {
     where.OR = [
-      { customerName: { contains: q, mode: "insensitive" } },
-      { code: { contains: q, mode: "insensitive" } },
+      // MySQL collation (utf8mb4_unicode_ci) is already case-insensitive.
+      { customerName: { contains: q } },
+      { code: { contains: q } },
       { customerMobile: { contains: q.replace(/\D/g, "") || q } },
-      { address: { contains: q, mode: "insensitive" } },
+      { address: { contains: q } },
     ];
   }
   const projects = await db.project.findMany({

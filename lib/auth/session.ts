@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import type { Role } from "@prisma/client";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import { isConfigured } from "@/lib/config";
 import { signJwt, verifyJwt, TEAM_COOKIE, customerCookieName } from "./jwt";
 
 const TEAM_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -15,7 +16,8 @@ type CustomerClaims = { pid: string; mob: string; typ: "customer" };
 const cookieOpts = (maxAge: number) => ({
   httpOnly: true,
   sameSite: "lax" as const,
-  secure: env.isProd,
+  // Secure when the site is served over https (cookie would be dropped on plain http otherwise).
+  secure: env.appUrl.startsWith("https://"),
   path: "/",
   maxAge,
 });
@@ -31,6 +33,7 @@ export async function endTeamSession() {
 
 /** Current team member, re-loaded from the DB so deactivation takes effect immediately. */
 export async function getTeamUser() {
+  if (!isConfigured()) return null;
   const claims = await verifyJwt<TeamClaims>((await cookies()).get(TEAM_COOKIE)?.value);
   if (!claims || claims.typ !== "team") return null;
   const user = await db.user.findUnique({ where: { id: claims.sub } });
@@ -38,6 +41,8 @@ export async function getTeamUser() {
 }
 
 export async function requireTeamUser(roles?: Role[]) {
+  await cookies(); // marks the page dynamic before any redirect decision
+  if (!isConfigured()) redirect("/setup");
   const user = await getTeamUser();
   if (!user) redirect("/login");
   if (roles && !roles.includes(user.role)) redirect("/team?error=forbidden");

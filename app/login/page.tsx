@@ -1,9 +1,14 @@
 import { Logo } from "@/components/Logo";
+import { redirect } from "next/navigation";
+import { isConfigured } from "@/lib/config";
 import { LoginForm } from "./LoginForm";
+
+export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Team sign in" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  if (!isConfigured()) redirect("/setup");
   const { next } = await searchParams;
   return (
     <main className="min-h-full flex items-center justify-center p-4">

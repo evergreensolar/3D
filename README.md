@@ -10,39 +10,31 @@ and the database schema already covers them.
 
 ---
 
-## 1. Quick start (local)
+## 1. Quick start
 
-Requirements: Node 20+ (22 recommended), PostgreSQL 14+, and Chromium for the processing worker.
+Requirements: Node 20+ (22 recommended) and a **MySQL 8 / MariaDB 10.6+** database. No environment variables are needed.
 
 ```bash
 npm install
-cp .env.example .env            # then edit SESSION_SECRET
-docker compose up -d db         # or use your own PostgreSQL; DATABASE_URL in .env
-npx prisma migrate deploy
-npm run db:seed                 # team users + a demo project using the sample model
-npm run dev                     # web on :3000 + processing worker
+npm run build
+npm start          # then open the site in a browser
 ```
 
-The worker needs a Chromium binary. If Playwright's browsers are not installed, run
-`npx playwright-core install chromium` or set `CHROMIUM_PATH=/usr/bin/chromium` in `.env`.
+The first visit opens **/setup**. It asks for the database host, name, username and password, the site
+address, and your admin login. It then creates all the tables and logs you in. Settings are saved in
+`~/.evergreen-portal/config.json`, outside the app folder, so they survive redeploys. Later database changes
+are applied automatically every time the server starts.
 
-Sign in at http://localhost:3000/login:
+**Processing** (shading, snapshots, PDF) runs in the designer's browser on the project page right after
+an upload, so no special server software is needed. Keep the page open for the ~30 seconds it takes.
+On a VPS you can also run `npm run worker` (needs Chromium) to process uploads on the server instead.
 
-| Role | Email | Password |
-|---|---|---|
-| Admin | admin@evergreen.test | evergreen123 |
-| Designer | designer@evergreen.test | evergreen123 |
-| Designer | designer2@evergreen.test | evergreen123 |
-| Sales | sales@evergreen.test | evergreen123 |
-
-**Change these passwords before going live** (or delete the seed users).
-
-With the default `console` providers, SMS/WhatsApp/email messages are printed in the terminal, and in
-development the OTP is also shown on the OTP screen (`DEV_SHOW_OTP=true`).
+For development with ready-made team users: put `DATABASE_URL="mysql://…"` and `SESSION_SECRET` in `.env`, then run
+`npx prisma migrate deploy && npm run db:seed && npm run dev`. All seed users have the password `evergreen123`.
 
 ## 2. Testing Phase 1 — checklist
 
-1. **Sign in** as the designer → *Projects* shows the demo project `EGS-2026-0001` (processed by the worker within ~10 s).
+1. **Sign in** as the designer → *Projects* shows the demo project `EGS-2026-0001` (it is processed the first time you open it).
 2. **Upload**: *+ New* → fill in the customer and system details → paste a Google Maps link to fill the coordinates →
    choose `public/samples/sample-rooftop.glb` (or your own SketchUp export) → *Upload & process*.
    The project page shows "Processing" and refreshes itself when it is done.
@@ -73,57 +65,28 @@ shading on the sample model). Type check: `npm run typecheck`.
 - **Obstructions**: model everything that casts shade: parapets, the stair room ("mumty"), water tanks, neighbouring
   buildings, and trees (simple shapes are fine). Transparent glass (opacity < 50 %) does not cast shade.
 
-## 4. Configuration (environment variables)
+## 4. Configuration
 
-See `.env.example` for the full list.
-
-| Area | Variable | Options |
-|---|---|---|
-| App | `APP_URL` | Public base URL used in messages, the PDF link and the QR code |
-| | `SESSION_SECRET` | ≥ 32 random chars (`openssl rand -base64 48`); signs sessions, file URLs and OTP hashes |
-| Storage | `STORAGE_DRIVER` | `local` (disk, `STORAGE_LOCAL_DIR`) or `s3` (`S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, keys, `S3_FORCE_PATH_STYLE`) |
-| SMS | `SMS_PROVIDER` | `console`, `msg91` (India DLT: `MSG91_AUTH_KEY`, `MSG91_OTP_TEMPLATE_ID`, `MSG91_FLOW_TEMPLATE_ID`), `twilio` |
-| WhatsApp | `WHATSAPP_PROVIDER` | `console`, `meta` (Cloud API; map templates with `WA_TEMPLATE_<NAME>=<approved template>`), `webhook` (POSTs JSON to any BSP / relay) |
-| Email | `EMAIL_PROVIDER` | `console`, `smtp` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`) |
-| Worker | `CHROMIUM_PATH` | Path to Chromium if Playwright can't find one |
+Everything essential is set on the /setup page. Optional settings (S3 storage, MSG91/Twilio SMS,
+Meta/webhook WhatsApp, SMTP email, test OTP display) are listed in [`docs/env-reference.txt`](docs/env-reference.txt).
+Add them as environment variables on the host, or as extra keys in `~/.evergreen-portal/config.json`.
 
 **Adding a provider** (for example a new WhatsApp vendor): implement the interface in `lib/notify/types.ts`, add a
-`case` in `lib/notify/providers.ts`, and set the env var. Nothing else changes. Business-initiated WhatsApp
-messages need pre-approved templates. Template parameter `{{1}}` is always the respectful address
-("Mr. Amit Roy" / "Sir/Ma'am"); see `lib/notify/templates.ts` for the parameter order.
+`case` in `lib/notify/providers.ts`, and set the variable. Template parameter `{{1}}` is always the respectful
+address ("Mr. Amit Roy" / "Sir/Ma'am").
 
 ## 5. Deployment
 
-A single small VPS (2 vCPU / 4 GB, e.g. in Mumbai) is enough to start.
-
-1. Install Node 22, PostgreSQL 16 (or use a managed DB), and Chromium (`apt install chromium` → `CHROMIUM_PATH=/usr/bin/chromium`).
-2. Use S3-compatible storage in production (`STORAGE_DRIVER=s3`; AWS S3 ap-south-1, Cloudflare R2 or MinIO).
-3. ```bash
-   npm ci
-   npx prisma migrate deploy
-   npm run build
-   ```
-4. Run two processes under systemd or pm2:
-   - web: `npm start`
-   - worker: `npm run worker` (it calls the web app at `APP_URL`, so the worker must be able to reach that URL)
-5. Put Nginx/Caddy with HTTPS in front (camera, microphone and screen sharing for Phases 2–3 need HTTPS). For large models,
-   raise the upload limit: `client_max_body_size 300m;`.
-6. Backups: `pg_dump` nightly, plus bucket versioning / lifecycle on the storage bucket.
-
-The app can also run on Vercel with an external worker, but the worker needs a long-running machine with
-Chromium, so a VPS is simpler.
-
 ### Hostinger (managed Node.js hosting)
+1. hPanel → Databases → create a MySQL database and note the database name, username and password.
+2. Deploy from GitHub: framework Next.js, Node 22.x, build `npm run build`, output `.next`. **Leave environment variables empty.**
+3. Open the site. The setup page appears: enter the database details (host as shown in hPanel, usually `localhost`) and your admin login, then click **Install**.
+4. Uploaded files are kept in `~/.evergreen-portal/storage`. For many projects, switch to S3-compatible storage (e.g. Cloudflare R2) via `STORAGE_DRIVER=s3`.
+5. To test the customer link before an SMS provider is set up, add `DEV_SHOW_OTP=true` (it shows the code on screen). Remove it before sending links to real customers.
 
-- Build command `npm run build` (it also applies database migrations). Start command `npm start`. Node 22.
-- Environment variables: paste only the 5 REQUIRED lines from `.env.example`. Delete any other keys the
-  importer added, because Hostinger refuses empty values.
-- Hostinger provides MySQL, not PostgreSQL. Use a free PostgreSQL such as Supabase (Mumbai region), and copy the
-  **Session pooler** connection string into `DATABASE_URL`.
-- No seed is needed: sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` and the first admin account is created automatically.
-- **Limitation:** the processing worker (headless Chromium) cannot run on managed hosting, so uploads stay at
-  "Processing". Run the worker on a VPS (e.g. Hostinger KVM), or host the whole app on a VPS as described above.
-- Local storage may be wiped on redeploy; use `STORAGE_DRIVER=s3` (e.g. Cloudflare R2) for real projects.
+### VPS
+Install Node 22 and MySQL/MariaDB, then run `npm ci && npm run build`. Run `npm start` under pm2/systemd behind Nginx/Caddy with HTTPS
+(`client_max_body_size 300m;`). Optionally also run `npm run worker` with Chromium for server-side processing.
 
 ## 6. Project layout
 

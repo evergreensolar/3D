@@ -1,9 +1,10 @@
 # Evergreen Solar Design Portal — plan & data model
 
 ## Architecture
+- **First-run setup** (`/setup`): database details and admin are entered in the browser; tables are created by a built-in migration runner; settings live in `~/.evergreen-portal/config.json`.
 - **Next.js 15 (App Router, TypeScript)**: one app serves the team portal (`/team`), the customer link (`/p/<token>`), and the APIs.
-- **PostgreSQL + Prisma**: all state, including a small job queue (`Job` table, `FOR UPDATE SKIP LOCKED`).
-- **Worker** (`npm run worker`): a separate Node process. For each uploaded version it opens `/render/<versionId>` in **headless Chromium**. That page runs the *same* Three.js scene code as the customer viewer: it converts DAE to GLB, detects panels, ray-traces a year of shading, and captures snapshots. The worker then optimises the GLB (gltf-transform) and builds the PDF (pdfkit + QR).
+- **MySQL / MariaDB + Prisma** (works with Hostinger databases): all state, including a small job queue (`Job` table, `FOR UPDATE SKIP LOCKED`).
+- **Processing** runs in the designer's browser after upload (default; works on any host), or optionally in the **worker** (`npm run worker`, headless Chromium on a VPS). Whichever claims a version first processes it. The processor runs the *same* Three.js scene code as the customer viewer: it converts DAE to GLB, detects panels, ray-traces a year of shading, and captures snapshots. The worker then optimises the GLB (gltf-transform) and builds the PDF (pdfkit + QR).
 - **Storage** behind `StorageProvider`: `local` (signed `/api/files` URLs) or `s3` (AWS S3 / R2 / MinIO / Wasabi, presigned URLs).
 - **Messaging** behind `SmsProvider` / `WhatsAppProvider` / `EmailProvider`. Every message is logged in `Notification`, and every template opens with a respectful address (enforced by a test).
 - **Video meetings (Phase 2)** behind a `VideoProvider` interface: public Jitsi first, self-hosted Jitsi later by configuration.
@@ -19,7 +20,7 @@ from a fitted directional-light shadow map; the panel highlight uses the ray-tra
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Upload (GLB/DAE/ZIP), processing worker, 3D viewer with sun/shadows + shaded-panel highlight + monthly summary, PDF + QR, customer link with OTP, send via WhatsApp/SMS/email | **built** |
-| 2 | Pinned + general comments with replies/resolve, versioning (v2, v3…, history), designer availability + leave, slot booking (14 days, no double-booking via a Postgres exclusion constraint), day/week calendar, embedded Jitsi (IFrame API), reminders (booking, T-1 day, T-15 min), meeting notes | next |
+| 2 | Pinned + general comments with replies/resolve, versioning (v2, v3…, history), designer availability + leave, slot booking (14 days, no double-booking via a row lock on the designer inside the booking transaction), day/week calendar, embedded Jitsi (IFrame API), reminders (booking, T-1 day, T-15 min), meeting notes | next |
 | 3 | Video consent approval (MediaRecorder) + approval OTP, SHA-256 of the video + record hash, version lock + badge, admin dashboard with status pipeline and filters | later |
 
 ## Data model (prisma/schema.prisma)

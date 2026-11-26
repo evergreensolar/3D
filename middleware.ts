@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyJwt, TEAM_COOKIE } from "@/lib/auth/jwt";
 
-// Protects internal pages and APIs. Role checks happen in each handler.
-export async function middleware(req: NextRequest) {
-  const claims = await verifyJwt<{ typ: string }>(req.cookies.get(TEAM_COOKIE)?.value);
-  if (claims?.typ === "team") return NextResponse.next();
+// Fast gate for internal pages. The session itself is verified on the server
+// (getTeamUser / requireTeamUser) because the signing secret lives in the runtime config.
+export function middleware(req: NextRequest) {
+  if (req.cookies.get("evg_t")?.value) return NextResponse.next();
   if (req.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }

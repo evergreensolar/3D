@@ -7,7 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+  // Set at runtime from the first-run setup page (config file) or the DATABASE_URL env var.
   url      = env("DATABASE_URL")
 }
 
@@ -70,7 +71,7 @@ model Project {
   customerSalutation Salutation    @default(NONE)
   customerMobile     String        // E.164, e.g. +919830012345
   customerEmail      String?
-  address            String
+  address            String        @db.Text
   latitude           Float
   longitude          Float
   // Rotation (degrees, clockwise) from the model's "north" (SketchUp green axis) to true north.
@@ -128,11 +129,11 @@ model DesignVersion {
   project            Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   number             Int           // 1, 2, 3 ...
   status             VersionStatus @default(QUEUED)
-  changeNotes        String?       // "what changed" written by the designer
+  changeNotes        String?       @db.Text // "what changed" written by the designer
 
   originalKey        String        // storage key of the SketchUp export
   originalFormat     ModelFormat
-  originalFilename   String
+  originalFilename   String        @db.VarChar(255)
   originalBytes      Int
 
   modelKey           String?       // optimised GLB served to viewers
@@ -145,9 +146,10 @@ model DesignVersion {
   detectedPanelCount Int?
   // { min:[x,y,z], max:[x,y,z] } metres, Y-up
   bbox               Json?
-  processingLog      String?
-  processingError    String?
+  processingLog      String?       @db.Text
+  processingError    String?       @db.Text
   processedAt        DateTime?
+  processingStartedAt DateTime?  // set when a browser or the worker claims the version
 
   // [P3] approval lock
   lockedAt           DateTime?
@@ -192,7 +194,7 @@ model Job {
   maxAttempts Int     @default(3)
   runAfter  DateTime  @default(now())
   lockedAt  DateTime?
-  lastError String?
+  lastError String?   @db.Text
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -217,7 +219,7 @@ model OtpChallenge {
   attempts   Int        @default(0)
   consumedAt DateTime?
   ip         String?
-  userAgent  String?
+  userAgent  String?    @db.Text
   createdAt  DateTime   @default(now())
 
   approval Approval?
@@ -244,7 +246,7 @@ model Comment {
   authorType   AuthorType
   authorUserId String?
   authorUser   User?         @relation(fields: [authorUserId], references: [id])
-  body         String
+  body         String        @db.Text
   // null = general comment; otherwise { point:[x,y,z], normal:[x,y,z], meshName, camera:{position,target} }
   anchor       Json?
   resolvedAt   DateTime?
@@ -274,7 +276,7 @@ model TimeOff {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   startsAt DateTime // a full leave day is stored as [00:00, 24:00) IST
   endsAt   DateTime
-  reason   String?
+  reason   String?  @db.Text
 
   @@index([userId, startsAt])
 }
@@ -298,14 +300,13 @@ model Meeting {
   bookedBy     AuthorType
   videoProvider String       // "jitsi-public" | "jitsi-self-hosted" ...
   roomName     String        @unique
-  notes        String?       // meeting notes added after the call
-  cancelReason String?
+  notes        String?       @db.Text // meeting notes added after the call
+  cancelReason String?        @db.Text
   rescheduledFromId String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  // Double-booking is prevented by a Postgres exclusion constraint added in the P2 migration:
-  // EXCLUDE USING gist ("designerId" WITH =, tstzrange("startsAt","endsAt") WITH &&) WHERE (status = 'BOOKED')
+  // Double-booking is prevented in P2 by locking the designer row (SELECT … FOR UPDATE) inside the booking transaction.
   @@index([designerId, startsAt])
 }
 
@@ -331,10 +332,10 @@ model Notification {
   provider          String
   to                String
   template          String             // otp, report_ready, new_version, meeting_reminder ...
-  body              String
+  body              String             @db.Text
   status            NotificationStatus @default(QUEUED)
   providerMessageId String?
-  error             String?
+  error             String?            @db.Text
   sentAt            DateTime?
   createdAt         DateTime           @default(now())
 
@@ -352,7 +353,7 @@ model Approval {
   versionNumber  Int
   customerName   String
   customerMobile String
-  consentText    String
+  consentText    String        @db.Text
   videoKey       String
   videoMime      String
   videoBytes     Int
@@ -361,7 +362,7 @@ model Approval {
   otpChallengeId String        @unique
   otpChallenge   OtpChallenge  @relation(fields: [otpChallengeId], references: [id])
   ip             String?
-  userAgent      String?
+  userAgent      String?       @db.Text
   deviceInfo     Json?
   approvedAt     DateTime      @default(now())
 

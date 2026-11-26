@@ -10,7 +10,8 @@ import { projectDetails } from "@/lib/details";
 import { addressCustomer } from "@/lib/notify/address";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
-import { CopyLink, SendToCustomer, Reprocess, ProcessingPoller } from "./ProjectActions";
+import { CopyLink, SendToCustomer, Reprocess } from "./ProjectActions";
+import { BrowserProcessor } from "./BrowserProcessor";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   return (
     <main className="mx-auto max-w-7xl p-4">
-      {busy && <ProcessingPoller versionId={latest.id} />}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-xs text-gray-500"><Link href="/team" className="hover:underline">Projects</Link> / {p.code}</div>
@@ -50,12 +50,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {busy && (
-        <div className="mt-4 flex items-center gap-3 rounded-xl bg-blue-50 p-4 text-sm text-blue-800">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-blue-700" />
-          Version {latest.number}: {VERSION_STATUS_LABEL[latest.status]} — converting the model, computing a year of shading and building the PDF. This page updates automatically.
-        </div>
-      )}
+      {busy && <BrowserProcessor key={latest.id} versionId={latest.id} />}
       {latest?.status === "FAILED" && (
         <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">
           <b>Version {latest.number} could not be processed.</b> {latest.processingError}
