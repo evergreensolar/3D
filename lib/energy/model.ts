@@ -45,8 +45,8 @@ export const DEFAULT_ASSUMPTIONS: EnergyAssumptions = {
   soilingDirtyPct: [10, 12, 14, 15, 12, 5, 3, 3, 4, 6, 8, 10],
   soilingCleanPct: 2,
   tempCoeffPctPerC: -0.37,
-  cellRiseC: 30,
-  otherLossPct: 10,
+  cellRiseC: 25,
+  otherLossPct: 8,
   inverterEffPct: 97,
   albedo: 0.2,
 };
@@ -72,6 +72,8 @@ export interface EnergyEstimate {
   }[];
   /** profile[month-1][i] = average AC power, kW per kWp (cleaned), at hours[i] on a typical day. */
   profile: number[][];
+  /** Same on a clear sunny day (cleaned panels). */
+  profileClear?: number[][];
   annual: { clean: number; dirty: number; noShade: number };
   /** Annual performance ratio (cleaned) vs. irradiation on the panels. */
   performanceRatio: number;
@@ -130,6 +132,22 @@ export function irradianceAt(lat: number, lng: number, northOffsetDeg: number, d
   return { up: true, sun: st.direction, dni: (ghi - dhi) / sinAlt, dhi, ghi, tempC: f.temp };
 }
 
+/**
+ * Clear, sunny-day irradiance (Haurwitz clear-sky model) reduced for the typical haze of each month
+ * in West Bengal (winter smog / dust is heavier than the monsoon-washed air).
+ */
+const HAZE = [0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.97, 0.97, 0.96, 0.95, 0.93, 0.92];
+const CLEAR_DIFFUSE = 0.2;
+export function clearSkyAt(lat: number, lng: number, northOffsetDeg: number, date: Date, month: number): IrradianceAt {
+  const st = sunState(date, lat, lng, northOffsetDeg);
+  const cosZ = Math.sin(st.altitudeDeg * D2R);
+  const temp = siteClimate(lat).temp[month - 1];
+  if (!st.up || cosZ <= 0.02) return { up: false, sun: st.direction, dni: 0, dhi: 0, ghi: 0, tempC: temp };
+  const ghi = 1098 * cosZ * Math.exp(-0.057 / cosZ) * HAZE[month - 1];
+  const dhi = CLEAR_DIFFUSE * ghi;
+  return { up: true, sun: st.direction, dni: (ghi - dhi) / cosZ, dhi, ghi, tempC: temp + 2 };
+}
+
 /** The representative day (21st) at each half hour. */
 export function irradianceTable(lat: number, lng: number, northOffsetDeg: number, month: number) {
   return PROFILE_HOURS.map((h) => irradianceAt(lat, lng, northOffsetDeg, istDate(SIM_YEAR, month, 21, h), month));
@@ -141,10 +159,14 @@ export function instantOutputKw(o: {
   normals: [number, number, number][]; fractions: ArrayLike<number>; kwp: number; cleaned?: boolean;
   /** Per-panel weights (Wp) when panels differ. */
   weights?: number[];
+  /** "clear" = a sunny day; "average" = long-term average weather (default). */
+  sky?: "clear" | "average";
   assumptions?: EnergyAssumptions;
 }) {
   const a = o.assumptions ?? DEFAULT_ASSUMPTIONS;
-  const irr = irradianceAt(o.lat, o.lng, o.northOffsetDeg, o.date, o.month);
+  const irr = o.sky === "clear"
+    ? clearSkyAt(o.lat, o.lng, o.northOffsetDeg, o.date, o.month)
+    : irradianceAt(o.lat, o.lng, o.northOffsetDeg, o.date, o.month);
   if (!irr.up || !o.normals.length) return 0;
   const soil = o.cleaned === false ? a.soilingDirtyPct[o.month - 1] : a.soilingCleanPct;
   let sum = 0, wsum = 0;
@@ -188,13 +210,21 @@ export function estimateEnergy(o: {
   const n = Math.max(1e-9, o.panels.reduce((sum, p) => sum + (p.weight ?? 1), 0)); // total weight
   const months: EnergyEstimate["months"] = [];
   const profile: number[][] = [];
+  const profileClear: number[][] = [];
   let poaYear = 0;
   for (let month = 1; month <= 12; month++) {
     const table = irradianceTable(o.lat, o.lng, o.northOffsetDeg, month);
     let clean = 0, dirty = 0, noShade = 0, poaDay = 0;
     const row: number[] = [];
+    const rowClear: number[] = [];
     table.forEach((irr, i) => {
       const f = irr.up ? o.shadeAt(month, PROFILE_HOURS[i]) : null;
+      const clear = clearSkyAt(o.lat, o.lng, o.northOffsetDeg, istDate(SIM_YEAR, month, 21, PROFILE_HOURS[i]), month);
+      let pSunny = 0;
+      if (clear.up && f) {
+        o.panels.forEach((p, k) => { pSunny += acPerKwp(panelPoa(p.normal, clear, f[k] ?? 0, a.albedo), clear.tempC, a.soilingCleanPct, a) * (p.weight ?? 1); });
+      }
+      rowClear.push(round3(pSunny / n));
       let pClean = 0, pDirty = 0, pFree = 0, poaSum = 0;
       if (irr.up) {
         o.panels.forEach((p, k) => {
@@ -217,6 +247,7 @@ export function estimateEnergy(o: {
     const d = DAYS[month - 1];
     months.push({ month, days: d, clean: round1(clean * d), dirty: round1(dirty * d), noShade: round1(noShade * d), poa: round1(poaDay * d) });
     profile.push(row);
+    profileClear.push(rowClear);
     poaYear += poaDay * d;
   }
   const sum = (k: "clean" | "dirty" | "noShade") => round1(months.reduce((s, m) => s + m[k], 0));
@@ -225,6 +256,7 @@ export function estimateEnergy(o: {
     hours: PROFILE_HOURS,
     months,
     profile,
+    profileClear,
     annual,
     performanceRatio: poaYear > 0 ? Math.round((annual.clean / poaYear) * 1000) / 1000 : 0,
     assumptions: a,

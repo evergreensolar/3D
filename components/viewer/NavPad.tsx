@@ -4,7 +4,9 @@
 import { useRef, useState } from "react";
 import type { ViewApi } from "./Scene3D";
 
-export function NavPad({ api, dragMode, setDragMode, measuring, setMeasuring }: {
+export function NavPad({ api, dragMode, setDragMode, measuring, setMeasuring, full, onFull }: {
+  full?: boolean;
+  onFull?: () => void;
   api: ViewApi | null;
   dragMode: "rotate" | "move";
   setDragMode: (m: "rotate" | "move") => void;
@@ -30,6 +32,7 @@ export function NavPad({ api, dragMode, setDragMode, measuring, setMeasuring }: 
           {dragMode === "rotate" ? "↻ Rotate" : "✋ Move"}
         </button>
         <button className={`${B} ${measuring ? "bg-pink-600 text-white ring-pink-700" : ""}`} title="Measure a distance or height" onClick={() => setMeasuring(!measuring)}>📏</button>
+        {onFull && <button className={B} title={full ? "Exit full screen" : "Full screen"} onClick={onFull}>{full ? "⤡" : "⛶"}</button>}
       </div>
       {open && <div className="grid grid-cols-3 gap-1" aria-label="Move the view">
         <button className={B} disabled={disabled} title="Rotate left" {...hold(() => api?.rotate(-6))}>⟲</button>

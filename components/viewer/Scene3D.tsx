@@ -68,23 +68,27 @@ function StageNode({ url, opts, panels, date, highlight, onSun, onReady, onHeadi
   }, [gltf]);
   useEffect(() => () => stage.dispose(), [stage]);
 
-  // Initial camera: from the south-east, framed to the model.
+  // Initial camera: from the south-east, framed on the solar panels (whole model if none).
   const home = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera;
-    cam.position.copy(stage.viewPosition("se", cam.fov, size.width / size.height));
+    const pb = stage.panelsBox();
+    const focus = pb ? pb.getCenter(new THREE.Vector3()) : stage.center.clone();
+    // a little wider than the array so the roof around it is visible too
+    const focusR = pb ? Math.min(stage.radius, Math.max(7, (pb.getSize(new THREE.Vector3()).length() / 2) * 2.3)) : stage.radius;
+    cam.position.copy(stage.viewPositionAt("se", cam.fov, size.width / size.height, focus, focusR));
     cam.near = Math.max(0.05, stage.radius / 200);
     cam.far = stage.radius * 60;
     cam.updateProjectionMatrix();
     const c = controls as unknown as OrbitControlsImpl | null;
     if (c) {
-      c.target.copy(stage.center);
+      c.target.copy(focus);
       c.maxDistance = stage.radius * 8;
       c.minDistance = Math.max(0.5, stage.radius * 0.03);
       c.screenSpacePanning = true;
       c.update();
     }
-    home.current = { pos: cam.position.clone(), target: stage.center.clone() };
+    home.current = { pos: cam.position.clone(), target: focus.clone() };
     onReady({
       panelCount: stage.panels.length,
       normals: stage.panels.map((x) => [x.normal.x, x.normal.y, x.normal.z] as [number, number, number]),

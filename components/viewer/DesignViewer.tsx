@@ -50,6 +50,26 @@ export function DesignViewer(p: DesignViewerProps) {
   const [sun, setSun] = useState<SunResult | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
   const [api, setApi] = useState<ViewApi | null>(null);
+  // Full screen: the browser's fullscreen where available (desktop / Android), CSS-only otherwise (iPhone).
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [full, setFull] = useState(false);
+  const enterFull = () => {
+    setFull(true);
+    history.pushState({ evgFull: true }, ""); // phone "back" leaves full screen instead of the page
+    viewRef.current?.requestFullscreen?.().catch(() => {});
+  };
+  const exitFull = useCallback(() => {
+    setFull(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!full) return;
+    const onPop = () => exitFull();
+    const onFs = () => { if (!document.fullscreenElement) { setFull(false); if (history.state?.evgFull) history.back(); } };
+    window.addEventListener("popstate", onPop);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => { window.removeEventListener("popstate", onPop); document.removeEventListener("fullscreenchange", onFs); };
+  }, [full, exitFull]);
   const [dragMode, setDragModeState] = useState<"rotate" | "move">("rotate");
   const setDragMode = (m: "rotate" | "move") => { setDragModeState(m); api?.setDragMode(m); };
   const [measuring, setMeasuring] = useState(false);
@@ -90,9 +110,11 @@ export function DesignViewer(p: DesignViewerProps) {
   const light = useMemo(() => dayLight(SIM_YEAR, month, day, p.lat, p.lng), [month, day, p.lat, p.lng]);
   const date = useMemo(() => istDate(SIM_YEAR, month, day, hour), [month, day, hour]);
   const opts = useMemo(() => ({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg }), [p.lat, p.lng, p.northOffsetDeg]);
-  const outputKw = sun && p.kwp && normals.length
-    ? instantOutputKw({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, date, month, normals, weights, fractions: sun.fractions, kwp: p.kwp })
-    : null;
+  const out = (sky: "clear" | "average", cleaned = true) =>
+    sun && p.kwp && normals.length
+      ? instantOutputKw({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, date, month, normals, weights, fractions: sun.fractions, kwp: p.kwp, sky, cleaned })
+      : null;
+  const sunnyKw = out("clear"), sunnyDustyKw = out("clear", false), avgKw = out("average");
   const activePreset = DATE_PRESETS.find((d) => d.month === month && d.day === day)?.id;
 
   // "Animate the day": sunrise → sunset in PLAY_SECONDS.
@@ -127,7 +149,7 @@ export function DesignViewer(p: DesignViewerProps) {
   return (
     <div className="flex h-full w-full flex-col lg:flex-row bg-white">
       {/* 3D canvas */}
-      <div className="relative min-h-[46vh] flex-1 bg-sky-200 lg:min-h-0">
+      <div ref={viewRef} className={full ? "fixed inset-0 z-50 bg-sky-200" : "relative min-h-[46vh] flex-1 bg-sky-200 lg:min-h-0"}>
         <ErrorCatcher onError={setError}>
           <Suspense fallback={null}>
             {panels !== undefined && <Scene3D
@@ -148,8 +170,15 @@ export function DesignViewer(p: DesignViewerProps) {
         </ErrorCatcher>
         <LoadingOverlay done={panelCount !== null} error={error} />
 
+        {full ? (
+          <button className="absolute left-3 top-3 z-40 rounded-xl bg-gray-900/85 px-3 py-2 text-sm font-semibold text-white shadow" onClick={() => (history.state?.evgFull ? history.back() : exitFull())}>
+            ← Back
+          </button>
+        ) : (
+          <button className="absolute bottom-3 right-3 z-30 hidden rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold shadow-sm ring-1 ring-black/10 sm:block" onClick={enterFull} title="Full screen">⛶ Full screen</button>
+        )}
         {/* time readout */}
-        <div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/90 px-3 py-2 text-xs shadow-sm ring-1 ring-black/5 backdrop-blur">
+        <div className={`pointer-events-none absolute z-30 left-3 ${full ? "top-16" : "top-3"} rounded-xl bg-white/90 px-3 py-2 text-xs shadow-sm ring-1 ring-black/5 backdrop-blur`}>
           <div className="font-semibold text-gray-900">{day} {MONTHS[month - 1]} · {formatHour(hour)} IST</div>
           {sun && (sun.sun.up ? (
             <div className="text-gray-600">Sun {Math.round(sun.sun.altitudeDeg)}° high, from {compassPoint(sun.sun.azimuthDeg)}</div>
@@ -167,7 +196,7 @@ export function DesignViewer(p: DesignViewerProps) {
           </div>
         </div>
 
-        <NavPad api={api} dragMode={dragMode} setDragMode={setDragMode} measuring={measuring}
+        <NavPad api={api} dragMode={dragMode} setDragMode={setDragMode} measuring={measuring} full={full} onFull={() => (full ? (history.state?.evgFull ? history.back() : exitFull()) : enterFull())}
           setMeasuring={(on) => { setMeasuring(on); setPending(null); if (on) setTab("details"); }} />
         {measuring && (
           <div className="absolute left-3 top-[72px] max-w-[60%] rounded-xl bg-pink-600 px-3 py-2 text-xs text-white shadow">
@@ -181,12 +210,17 @@ export function DesignViewer(p: DesignViewerProps) {
 
         {/* shading status */}
         {sun?.sun.up && panelCount !== null && panelCount > 0 && (
-          <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/90 px-3 py-2 text-xs shadow-sm ring-1 ring-black/5 backdrop-blur sm:right-auto">
+          <div className={`pointer-events-none absolute z-30 ${full ? "bottom-20" : "bottom-3"} left-3 right-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/90 px-3 py-2 text-xs shadow-sm ring-1 ring-black/5 backdrop-blur sm:right-auto sm:max-w-[70%]`}>
             <span className="font-semibold text-gray-900">
               {sun.shadedPanels === 0 ? "No shade on any panel" : `${sun.shadedPanels} of ${panelCount} panels have shade`}
             </span>
             <span className="text-gray-600">{sun.areaShadedPct.toFixed(1)}% of panel area</span>
-            {outputKw !== null && <span className="font-semibold text-brand-700">Average output now ≈ {outputKw.toFixed(1)} kW</span>}
+            {sunnyKw !== null && (
+              <span className="basis-full text-gray-700">
+                Output now: <b className="text-brand-700">sunny day ≈ {sunnyKw.toFixed(1)} kW</b> clean · {sunnyDustyKw!.toFixed(1)} kW dusty
+                <span className="text-gray-500"> · average weather ≈ {avgKw!.toFixed(1)} kW</span>
+              </span>
+            )}
             {highlight && sun.shadedPanels > 0 && (
               <span className="flex items-center gap-2 text-gray-600">
                 <i className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500" />partly
@@ -197,6 +231,13 @@ export function DesignViewer(p: DesignViewerProps) {
         )}
       </div>
 
+      {full && (
+        <div className="fixed bottom-3 left-3 right-3 z-[60] flex items-center gap-3 rounded-xl bg-white/95 px-3 py-2 shadow ring-1 ring-black/10">
+          <button className="btn-primary h-9 w-9 shrink-0 p-0" onClick={() => setPlaying((x) => !x)} aria-label={playing ? "Pause" : "Animate the day"}>{playing ? "❚❚" : "▶"}</button>
+          <input aria-label="Time of day" type="range" min={5} max={19} step={1 / 12} value={hour} onChange={(e) => { setPlaying(false); setHour(Number(e.target.value)); }} className="min-w-0 flex-1" />
+          <span className="w-24 shrink-0 text-right text-xs font-semibold">{day} {MONTHS[month - 1]} {formatHour(hour)}</span>
+        </div>
+      )}
       {/* controls */}
       <div className="flex max-h-[54vh] flex-col border-t border-gray-200 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
         <div className="flex border-b border-gray-200 px-2" role="tablist">

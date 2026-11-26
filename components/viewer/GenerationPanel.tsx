@@ -8,6 +8,7 @@ import { MONTHS, formatHour } from "@/lib/time";
 
 const CLEAN = "#2563eb";
 const DIRTY = "#b45309";
+const AVG = "#64748b";
 const fmt = (n: number) => Math.round(n).toLocaleString("en-IN");
 
 export function GenerationPanel({ energy, kwp, month, hour, onMonth }: {
@@ -37,7 +38,11 @@ export function GenerationPanel({ energy, kwp, month, hour, onMonth }: {
       <div>
         <div className="flex items-baseline justify-between">
           <h3 className="text-sm font-semibold text-gray-900">Typical day in {MONTHS[month - 1]}</h3>
-          <span className="text-xs text-gray-500">{fmt((m.clean * k) / m.days)} {unit}/day</span>
+          <span className="text-xs text-gray-500">{fmt((m.clean * k) / m.days)} {unit}/day on average</span>
+        </div>
+        <div className="mt-1 flex gap-3 text-[11px] text-gray-600">
+          {energy.profileClear && <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-4" style={{ background: CLEAN }} />Sunny day</span>}
+          <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: AVG }} />Average weather</span>
         </div>
         <DayCurve energy={energy} k={k} month={month} hour={hour} />
       </div>
@@ -129,7 +134,7 @@ function MonthlyBars({ energy, k, month, onMonth }: { energy: EnergyEstimate; k:
           })}
         </svg>
         <div className="pointer-events-none absolute -top-2 rounded-lg bg-gray-900 px-2 py-1 text-[11px] text-white shadow"
-          style={{ left: `${((L + shown * slot + slot / 2) / W) * 100}%`, transform: "translateX(-50%)" }}>
+          style={{ left: `${Math.min(80, Math.max(20, ((L + shown * slot + slot / 2) / W) * 100))}%`, transform: "translateX(-50%)", whiteSpace: "nowrap" }}>
           {MONTHS[shown]}: <b>{fmt(energy.months[shown].clean * k)}</b> cleaned · {fmt(energy.months[shown].dirty * k)} not
         </div>
       </div>
@@ -138,24 +143,27 @@ function MonthlyBars({ energy, k, month, onMonth }: { energy: EnergyEstimate; k:
 }
 
 function DayCurve({ energy, k, month, hour }: { energy: EnergyEstimate; k: number; month: number; hour: number }) {
-  const W = 360, H = 130, L = 34, B = 18, T = 8;
+  const W = 360, H = 140, L = 34, B = 18, T = 8;
   const pw = W - L - 4, ph = H - B - T;
-  const prof = energy.profile[month - 1].map((v) => v * k);
-  const maxAll = Math.max(...energy.profile.flat()) * k; // fixed scale across months for comparison
+  const avg = energy.profile[month - 1].map((v) => v * k);
+  const sunny = energy.profileClear?.[month - 1].map((v) => v * k) ?? null;
+  const maxAll = Math.max(...energy.profile.flat(), ...(energy.profileClear?.flat() ?? [0])) * k; // same scale every month
   const step = niceStep(maxAll / 2, true);
   const top = Math.max(step, Math.ceil(maxAll / step) * step);
   const h0 = energy.hours[0], h1 = energy.hours[energy.hours.length - 1];
   const x = (h: number) => L + ((h - h0) / (h1 - h0)) * pw;
   const y = (v: number) => T + ph - (ph * v) / top;
-  const pts = prof.map((v, i) => `${x(energy.hours[i]).toFixed(1)},${y(v).toFixed(1)}`);
-  const peak = prof.indexOf(Math.max(...prof));
-  // value at the selected time (linear interpolation)
+  const pts = (arr: number[]) => arr.map((v, i) => `${x(energy.hours[i]).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const t = Math.min(h1, Math.max(h0, hour));
-  const i = Math.min(prof.length - 2, Math.floor((t - h0) / 0.5));
-  const now = prof[i] + ((prof[i + 1] - prof[i]) * (t - energy.hours[i])) / 0.5;
+  const at = (arr: number[]) => {
+    const i = Math.min(arr.length - 2, Math.floor((t - h0) / 0.5));
+    return arr[i] + ((arr[i + 1] - arr[i]) * (t - energy.hours[i])) / 0.5;
+  };
+  const main = sunny ?? avg;
+  const now = at(main);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 h-auto w-full" role="img" aria-label={`Estimated output through a typical day in ${MONTHS[month - 1]}`}>
-      {[0, step, 2 * step].filter((v) => v <= top).map((v) => (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 h-auto w-full" role="img" aria-label={`Estimated output through a day in ${MONTHS[month - 1]}`}>
+      {[0, step, 2 * step, 3 * step].filter((v) => v <= top).map((v) => (
         <g key={v}>
           <line x1={L} x2={W - 4} y1={y(v)} y2={y(v)} stroke={v === 0 ? "#9ca3af" : "#e5e7eb"} />
           <text x={L - 4} y={y(v) + 3} textAnchor="end" fontSize={9} fill="#6b7280">{v.toFixed(v < 1 ? 1 : 0)} kW</text>
@@ -164,14 +172,14 @@ function DayCurve({ energy, k, month, hour }: { energy: EnergyEstimate; k: numbe
       {[6, 9, 12, 15, 18].map((hh) => (
         <text key={hh} x={x(hh)} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">{hh === 12 ? "12 PM" : hh < 12 ? `${hh} AM` : `${hh - 12} PM`}</text>
       ))}
-      <path d={`M${x(h0)},${y(0)} L${pts.join(" L")} L${x(h1)},${y(0)} Z`} fill={CLEAN} opacity={0.12} />
-      <polyline points={pts.join(" ")} fill="none" stroke={CLEAN} strokeWidth={2} strokeLinejoin="round" />
+      <path d={`M${x(h0)},${y(0)} L${pts(main)} L${x(h1)},${y(0)} Z`} fill={CLEAN} opacity={0.1} />
+      {sunny && <polyline points={pts(sunny)} fill="none" stroke={CLEAN} strokeWidth={2} strokeLinejoin="round" />}
+      <polyline points={pts(avg)} fill="none" stroke={sunny ? AVG : CLEAN} strokeWidth={2} strokeDasharray={sunny ? "4 3" : undefined} strokeLinejoin="round" />
       <line x1={x(t)} x2={x(t)} y1={T} y2={T + ph} stroke="#111827" strokeDasharray="3 3" />
       <circle cx={x(t)} cy={y(now)} r={4} fill={CLEAN} stroke="#fff" strokeWidth={2} />
-      <text x={Math.min(W - 60, x(t) + 6)} y={Math.max(T + 10, y(now) - 6)} fontSize={10} fill="#111827" fontWeight={600}>{formatHour(t)}: {now.toFixed(1)} kW</text>
-      {prof[peak] > 0 && Math.abs(energy.hours[peak] - t) > 1.5 && (
-        <text x={x(energy.hours[peak])} y={y(prof[peak]) - 5} textAnchor="middle" fontSize={9} fill="#6b7280">peak {prof[peak].toFixed(1)}</text>
-      )}
+      <text x={Math.min(W - 92, x(t) + 6)} y={Math.max(T + 10, y(now) - 6)} fontSize={10} fill="#111827" fontWeight={600}>
+        {formatHour(t)}: {now.toFixed(1)} kW{sunny ? ` (avg ${at(avg).toFixed(1)})` : ""}
+      </text>
     </svg>
   );
 }

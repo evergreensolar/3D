@@ -221,22 +221,30 @@ export class DesignStage {
     return new THREE.Color("#a5c8ec").lerp(new THREE.Color("#7fb2e5"), Math.min(1, (alt - 8) / 50));
   }
 
-  /** Camera position for a named fixed view (true-compass based). */
+  /** Camera position for a named fixed view (true-compass based), framing the whole model. */
   viewPosition(view: ViewName, fovDeg: number, aspect = 1): THREE.Vector3 {
+    return this.viewPositionAt(view, fovDeg, aspect, this.center, this.radius);
+  }
+
+  /** Same, framing a sphere (center, radius). */
+  viewPositionAt(view: ViewName, fovDeg: number, aspect: number, center: THREE.Vector3, radius: number): THREE.Vector3 {
     const v = VIEWS[view];
     const fov = (fovDeg * Math.PI) / 180;
     const fitFov = aspect < 1 ? 2 * Math.atan(Math.tan(fov / 2) * aspect) : fov;
-    const dist = (this.radius / Math.sin(fitFov / 2)) * v.zoom;
-    if (view === "top") {
-      return new THREE.Vector3(this.center.x, this.center.y + dist, this.center.z + 0.001);
-    }
+    const dist = (radius / Math.sin(fitFov / 2)) * v.zoom;
+    if (view === "top") return new THREE.Vector3(center.x, center.y + dist, center.z + 0.001);
     const [hx, , hz] = bearingVector(v.bearing, this.opts.northOffsetDeg);
     const e = (v.elevation * Math.PI) / 180;
-    return new THREE.Vector3(
-      this.center.x + hx * Math.cos(e) * dist,
-      this.center.y + Math.sin(e) * dist,
-      this.center.z + hz * Math.cos(e) * dist,
-    );
+    return new THREE.Vector3(center.x + hx * Math.cos(e) * dist, center.y + Math.sin(e) * dist, center.z + hz * Math.cos(e) * dist);
+  }
+
+  /** Box around all panels (null when there are none). */
+  panelsBox(): THREE.Box3 | null {
+    if (!this.panels.length) return null;
+    const b = new THREE.Box3();
+    const v = new THREE.Vector3();
+    for (const p of this.panels) for (let i = 0; i < p.tris.length; i += 3) b.expandByPoint(v.set(p.tris[i], p.tris[i + 1], p.tris[i + 2]));
+    return b;
   }
 
   dispose() {

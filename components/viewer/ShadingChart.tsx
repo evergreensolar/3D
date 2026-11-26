@@ -68,7 +68,7 @@ export function ShadingChart({ summary, month, onMonth }: { summary: ShadingSumm
         {shown !== null && (
           <div
             className="pointer-events-none absolute -top-1 rounded-lg bg-gray-900 px-2 py-1 text-xs text-white shadow"
-            style={{ left: `${((L + shown * slot + slot / 2) / W) * 100}%`, transform: "translateX(-50%)" }}
+            style={{ left: `${Math.min(80, Math.max(20, ((L + shown * slot + slot / 2) / W) * 100))}%`, transform: "translateX(-50%)", whiteSpace: "nowrap" }}
           >
             {MONTHS[shown]}: <b>{summary.months[shown].shadedPct}%</b> shaded
           </div>
