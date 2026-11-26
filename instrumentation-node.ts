@@ -1,6 +1,7 @@
 import { applyConfig, isConfigured } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { runMigrations } from "@/lib/setup/migrate";
+import { startScheduler } from "@/lib/scheduler";
 
 export async function startup() {
   applyConfig();
@@ -15,4 +16,6 @@ export async function startup() {
   } catch (e) {
     console.error("[setup] Migration check failed:", e instanceof Error ? e.message : e);
   }
+  startScheduler(); // meeting reminders
+
 }

@@ -8,7 +8,10 @@ import { storage } from "@/lib/storage";
 import { maskMobile } from "@/lib/validation";
 import { addressCustomer } from "@/lib/notify/address";
 import { Logo } from "@/components/Logo";
-import { DesignViewer } from "@/components/viewer/DesignViewer";
+import { CustomerDesign } from "@/components/customer/CustomerDesign";
+import { consentText } from "@/lib/approval";
+import { videoProvider } from "@/lib/video";
+import { joinableNow } from "@/lib/meetings";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import type { EnergyEstimate } from "@/lib/energy/model";
 import type { Measure } from "@/components/viewer/Scene3D";
@@ -41,6 +44,12 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
     );
   }
   const modelUrl = await storage().getUrl(version.modelKey, { expiresInSec: 6 * 3600 });
+  const meeting = await db.meeting.findFirst({
+    where: { projectId: project.id, status: "BOOKED", endsAt: { gt: new Date(Date.now() - 30 * 60_000) } },
+    orderBy: { startsAt: "asc" }, include: { designer: { select: { name: true } } },
+  });
+  const approval = await db.approval.findFirst({ where: { versionId: version.id }, orderBy: { approvedAt: "desc" } });
+  const video = videoProvider();
   const panelsUrl = version.panelsKey ? await storage().getUrl(version.panelsKey, { expiresInSec: 6 * 3600 }) : null;
 
   return (
@@ -49,25 +58,36 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
         <Logo className="text-sm" />
         <div className="min-w-0 text-right">
           <div className="truncate text-sm font-semibold">{project.systemSizeKw ? `${project.systemSizeKw} kW · ` : ""}{project.code}</div>
-          <div className="text-xs text-gray-500">Design Version {version.number}</div>
+          <div className="text-xs text-gray-500">Design Version {version.number}{version.lockedAt ? " · ✅ Approved" : ""}</div>
         </div>
       </header>
       <div className="border-b border-brand-100 bg-brand-50 px-4 py-1.5 text-xs text-gray-700">
         Namaskar {addressCustomer(project)} — pick any month and time to see the sun and shadows on your roof.
       </div>
       <div className="min-h-0 flex-1">
-        <DesignViewer
-          modelUrl={modelUrl}
-          panelsUrl={panelsUrl}
-          annotations={version.annotations as unknown as Measure[] | null}
-          lat={project.latitude}
-          lng={project.longitude}
-          northOffsetDeg={project.northOffsetDeg}
-          summary={version.shadingSummary as unknown as ShadingSummary | null}
-              energy={version.energyEstimate as unknown as EnergyEstimate | null}
-              kwp={project.systemSizeKw}
-          details={projectDetails(project, version)}
-          reportUrl={version.reportKey ? `/api/p/${token}/report` : undefined}
+        <CustomerDesign
+          token={token}
+          versionId={version.id}
+          versionNumber={version.number}
+          consent={consentText(project, version.number)}
+          approvedAt={approval?.approvedAt.toISOString() ?? null}
+          customerName={project.customerName}
+          video={{ domain: video.domain }}
+          meeting={meeting ? {
+            id: meeting.id, startsAt: meeting.startsAt.toISOString(), endsAt: meeting.endsAt.toISOString(), designer: meeting.designer.name,
+            room: video.roomForApi(meeting.roomName), joinUrl: video.joinUrl(meeting.roomName), joinable: joinableNow(meeting),
+          } : null}
+          viewer={{
+            modelUrl, panelsUrl,
+            annotations: version.annotations as unknown as Measure[] | null,
+            lat: project.latitude, lng: project.longitude, northOffsetDeg: project.northOffsetDeg,
+            summary: version.shadingSummary as unknown as ShadingSummary | null,
+            energy: version.energyEstimate as unknown as EnergyEstimate | null,
+            kwp: project.systemSizeKw,
+            details: projectDetails(project, version),
+            reportUrl: version.reportKey ? `/api/p/${token}/report` : undefined,
+            comments: { endpoint: `/api/p/${token}/comments`, team: false, locked: !!version.lockedAt },
+          }}
         />
       </div>
     </div>

@@ -15,6 +15,12 @@ test("every customer template opens with a respectful address", () => {
     const all = [
       templates.otp(c, { code: "123456", minutes: 10 }),
       templates.reportReady(c, { projectCode: "EGS-2026-0001", systemSizeKw: 5, version: 1, link: "https://x/p/abc" }),
+      templates.commentReply(c, { projectCode: "EGS-1", link: "l" }),
+      templates.meetingBooked(c, { when: "Mon 1 Dec, 11:00 AM IST", designer: "Ananya", link: "l" }),
+      templates.meetingReminder(c, { when: "w", lead: "tomorrow", link: "l" }),
+      templates.meetingCancelled(c, { when: "w", link: "l" }),
+      templates.newVersion(c, { projectCode: "EGS-1", version: 2, link: "l" }),
+      templates.approved(c, { projectCode: "EGS-1", version: 2 }),
     ];
     for (const r of all) {
       assert.match(r.text, RESPECTFUL, r.text);
@@ -75,4 +81,17 @@ test("model format sniffing", () => {
   assert.equal(sniffModelFormat(Buffer.from([0x50, 0x4b, 0x03, 0x04, 0])), "ZIP");
   assert.equal(sniffModelFormat(Buffer.from('<?xml version="1.0"?><COLLADA xmlns="x" version="1.4.1">')), "DAE");
   assert.equal(sniffModelFormat(Buffer.from("hello")), null);
+});
+
+test("approval record hash is stable and tamper-evident", async () => {
+  const { recordHash, verifyRecord, consentText } = await import("@/lib/approval");
+  const f = {
+    projectId: "p", versionId: "v", versionNumber: 2, customerName: "Amit Roy", customerMobile: "+919800000001",
+    consentText: consentText({ customerName: "Amit Roy", address: "12 Lake Rd,  Kolkata" }, 2), videoSha256: "ab", videoBytes: 1000,
+    videoMime: "video/webm", otpChallengeId: "o", ip: "1.2.3.4", userAgent: "UA", approvedAt: new Date("2026-11-26T10:00:00Z"),
+  };
+  assert.equal(f.consentText, "I, Amit Roy, have reviewed design Version 2 for 12 Lake Rd, Kolkata. Please install the system exactly as shown.");
+  const row = { ...f, id: "a", videoKey: "k", deviceInfo: {}, recordHash: recordHash(f) } as never;
+  assert.ok(verifyRecord(row));
+  assert.ok(!verifyRecord({ ...(row as object), videoBytes: 999 } as never), "edited record is detected");
 });

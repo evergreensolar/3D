@@ -115,5 +115,15 @@ export async function finalizeVersion(versionId: string, r: FinalizeInput) {
       bbox: r.bbox, processedAt, processingError: null, processingLog: r.log.join("\n").slice(0, 20000),
     },
   });
+  // A revised version for a customer who already has the link → let them know.
+  if (version.number > 1 && project.sentToCustomerAt && version.pipelineVersion === 0) {
+    const { dispatch } = await import("@/lib/notify");
+    const { templates } = await import("@/lib/notify/templates");
+    await dispatch({
+      projectId: project.id, template: "new_version", channels: ["WHATSAPP", "SMS", ...(project.customerEmail ? (["EMAIL"] as const) : [])],
+      rendered: templates.newVersion(project, { projectCode: project.code, version: version.number, link: `${appUrl}/p/${project.shareToken}` }),
+      to: { mobile: project.customerMobile, email: project.customerEmail },
+    });
+  }
   await logEvent(project.id, "version.ready", "system", { version: version.number, panels: r.panelCount, annualShadingPct: r.summary.annualPct });
 }

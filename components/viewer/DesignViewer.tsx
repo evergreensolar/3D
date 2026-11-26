@@ -9,6 +9,8 @@ import { MONTHS, formatHour, istDate } from "@/lib/time";
 import { ShadingChart } from "./ShadingChart";
 import { GenerationPanel } from "./GenerationPanel";
 import { NavPad } from "./NavPad";
+import { CommentsPanel } from "./CommentsPanel";
+import type { CommentDTO } from "@/lib/comments";
 import type { Measure, Vec3, ViewApi } from "./Scene3D";
 import { instantOutputKw, type EnergyEstimate } from "@/lib/energy/model";
 import { deserializePanels, type Panel, type PanelsFile } from "@/lib/scene/panels";
@@ -35,9 +37,15 @@ export interface DesignViewerProps {
   annotations?: Measure[] | null;
   /** Team: allow saving measurements for the customer to see. */
   annotateVersionId?: string | null;
+  /** Comments on this version (customer link or team page). */
+  comments?: { endpoint: string; versionId?: string; team: boolean; locked: boolean } | null;
+  /** Shown above the tabs (e.g. customer actions: meeting, approval). */
+  topBar?: React.ReactNode;
+  /** Shown over the 3D view (e.g. the video call). */
+  overlay?: React.ReactNode;
 }
 
-type Tab = "sun" | "energy" | "summary" | "details";
+type Tab = "sun" | "energy" | "comments" | "summary" | "details";
 const PLAY_SECONDS = 14;
 
 export function DesignViewer(p: DesignViewerProps) {
@@ -84,6 +92,40 @@ export function DesignViewer(p: DesignViewerProps) {
       return null;
     });
   }, []);
+  // ---- comments
+  const [comments, setComments] = useState<CommentDTO[]>([]);
+  const [commentPicking, setCommentPicking] = useState(false);
+  const [commentPoint, setCommentPoint] = useState<Vec3 | null>(null);
+  const [activeComment, setActiveComment] = useState<string | null>(null);
+  const cfg = p.comments;
+  const commentsUrl = cfg ? `${cfg.endpoint}${cfg.versionId ? `?versionId=${cfg.versionId}` : ""}` : null;
+  useEffect(() => {
+    if (!commentsUrl) return;
+    fetch(commentsUrl).then((r) => r.json()).then((j) => setComments(j.comments ?? [])).catch(() => {});
+  }, [commentsUrl]);
+  const onCommentPick = useCallback((pt: Vec3) => { setCommentPoint(pt); setCommentPicking(false); setTab("comments"); }, []);
+  async function postComment(body: string, opts: { pinned: boolean; parentId?: string }): Promise<string | null> {
+    if (!cfg) return "Comments are not available";
+    const r = await fetch(cfg.endpoint, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body, versionId: cfg.versionId, parentId: opts.parentId ?? null, anchor: opts.pinned && commentPoint ? { point: commentPoint } : null }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return j.error ?? "Could not send";
+    setComments(j.comments ?? []);
+    if (opts.pinned) setCommentPoint(null);
+    return null;
+  }
+  async function resolveComment(id: string, resolved: boolean) {
+    await fetch(`/api/team/comments/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ resolved }) });
+    if (commentsUrl) setComments((await (await fetch(commentsUrl)).json()).comments ?? []);
+  }
+  const pins = useMemo(() => [
+    ...comments.filter((c) => c.anchor).map((c) => ({ id: c.id, n: c.n, point: c.anchor!.point, resolved: !!c.resolvedAt, active: c.id === activeComment })),
+    ...(commentPoint ? [{ id: "new", n: comments.filter((c) => c.anchor).length + 1, point: commentPoint, resolved: false, active: true }] : []),
+  ], [comments, commentPoint, activeComment]);
+  const openComments = comments.filter((c) => !c.resolvedAt).length;
+
   async function saveMeasures() {
     if (!p.annotateVersionId) return;
     const items = [...savedMeasures, ...sessionMeasures].map(({ a, b, label }) => ({ a, b, label: label?.trim() || undefined }));
@@ -162,7 +204,9 @@ export function DesignViewer(p: DesignViewerProps) {
               onReady={(i) => { setPanelCount(i.panelCount); setNormals(i.normals); setWeights(i.weights); }}
               onHeading={onHeading}
               onApi={setApi}
-              onPick={measuring ? onPick : null}
+              onPick={measuring ? onPick : commentPicking ? onCommentPick : null}
+              pins={pins}
+              onPinClick={(id) => { if (id === "new") return; setActiveComment(id); setTab("comments"); setTimeout(() => document.getElementById(`c-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }}
               measures={[...savedMeasures, ...sessionMeasures]}
               pending={pending}
             />}
@@ -196,6 +240,12 @@ export function DesignViewer(p: DesignViewerProps) {
           </div>
         </div>
 
+        {p.overlay}
+        {commentPicking && (
+          <div className="absolute left-1/2 top-3 z-40 -translate-x-1/2 rounded-xl bg-violet-700 px-3 py-2 text-xs text-white shadow">
+            Tap the spot on the model your comment is about · <button className="underline" onClick={() => setCommentPicking(false)}>Cancel</button>
+          </div>
+        )}
         <NavPad api={api} dragMode={dragMode} setDragMode={setDragMode} measuring={measuring} full={full} onFull={() => (full ? (history.state?.evgFull ? history.back() : exitFull()) : enterFull())}
           setMeasuring={(on) => { setMeasuring(on); setPending(null); if (on) setTab("details"); }} />
         {measuring && (
@@ -240,11 +290,12 @@ export function DesignViewer(p: DesignViewerProps) {
       )}
       {/* controls */}
       <div className="flex max-h-[54vh] flex-col border-t border-gray-200 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
-        <div className="flex border-b border-gray-200 px-2" role="tablist">
-          {([["sun", "Sun"], ["energy", "Generation"], ["summary", "Shading"], ["details", "Details"]] as [Tab, string][]).map(([t, label]) => (
+        {p.topBar}
+        <div className="flex border-b border-gray-200 px-1" role="tablist">
+          {([["sun", "Sun"], ["energy", "Generation"], ...(cfg ? [["comments", `Comments${openComments ? ` (${openComments})` : ""}`]] : []), ["summary", "Shading"], ["details", "Details"]] as [Tab, string][]).map(([t, label]) => (
             <button
               key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-              className={`flex-1 px-2 py-3 text-sm font-semibold border-b-2 -mb-px ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}
+              className={`flex-1 px-1 py-3 text-xs sm:text-sm font-semibold border-b-2 -mb-px whitespace-nowrap ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}
             >
               {label}
             </button>
@@ -310,6 +361,15 @@ export function DesignViewer(p: DesignViewerProps) {
           {tab === "energy" && (
             p.energy ? <GenerationPanel energy={p.energy} kwp={p.kwp ?? null} month={month} hour={hour} onMonth={(m) => { setMonth(m); setDay(MONTH_DAY); }} />
               : <p className="text-sm text-gray-500">The generation estimate is not available for this version yet. Re-process it to calculate.</p>
+          )}
+
+          {tab === "comments" && cfg && (
+            <CommentsPanel comments={comments} team={cfg.team} locked={cfg.locked} picking={commentPicking} pendingPoint={!!commentPoint}
+              activeId={activeComment}
+              onStartPin={() => { setMeasuring(false); setCommentPoint(null); setCommentPicking(true); }}
+              onCancelPin={() => { setCommentPicking(false); setCommentPoint(null); }}
+              onPost={postComment} onResolve={cfg.team ? resolveComment : undefined}
+              onSelect={(id) => setActiveComment(id)} />
           )}
 
           {tab === "summary" && (

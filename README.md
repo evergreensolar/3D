@@ -76,6 +76,25 @@ exactly like an uploaded model. Satellite imagery: Esri World Imagery by default
 Revised designs: upload a new SketchUp export from the project page (**Upload revised model**) or save again from the
 Studio — each creates Version N+1; the customer link shows the newest version.
 
+## 3c. Comments, meetings, video calls and approval
+
+- **Comments:** customers tap a spot on the 3D model (numbered pin) or write a general comment; the designer
+  gets an email, replies from the project page (customer gets WhatsApp/SMS) and marks it resolved.
+- **Meetings:** each designer sets weekly hours, meeting length and leave under **Availability**. Customers tap
+  **Talk to a designer** and pick a free slot (next 14 days, from 2 hours ahead). The project's designer is chosen if free,
+  otherwise the next free designer; a database lock prevents double-booking. Confirmation goes out at once, reminders
+  1 day and 15 minutes before (scheduled inside the web app, no extra process needed). **Calendar** shows day/week views
+  (admins see everyone). Both sides can reschedule or cancel; designers add meeting notes.
+- **Video calls:** Jitsi, embedded next to the 3D model (screen sharing in the Jitsi toolbar). Settings:
+  `JITSI_DOMAIN` (default `meet.jit.si`) or `VIDEO_PROVIDER=jaas` + `JAAS_APP_ID`. **Note:** calls *embedded* from the
+  public meet.jit.si server are cut after about 5 minutes; for real meetings use a self-hosted Jitsi or JaaS (8x8, free tier),
+  or the "Open in new tab" link.
+- **Approval:** **Approve design** opens the front camera with the consent line on screen; the customer records
+  themselves reading it, then confirms with an OTP. Stored: video (and its SHA-256), name, mobile, version, time (IST),
+  IP, device, plus a SHA-256 over the whole record. The version is locked and the project shows **Approved**; the team
+  page re-checks both hashes every time it is opened.
+- **Team:** admins add designers/sales under **Team** (designers start with Mon–Sat 11:00–19:00).
+
 ## 3b. Guide for the design team (SketchUp)
 
 - **Export**: `File → Export → 3D Model → glTF Binary (.glb)` (SketchUp 2025+, or a glTF exporter extension).

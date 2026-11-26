@@ -5,6 +5,7 @@
 import { applyConfig, isConfigured } from "@/lib/config";
 import { db } from "@/lib/db";
 import { processVersion } from "./process-version";
+import { runMeetingReminder } from "@/lib/meetings";
 import { closeBrowser } from "./browser";
 
 const POLL_MS = 2000;
@@ -37,6 +38,8 @@ async function recoverStale() {
 
 async function run(job: JobRow) {
   switch (job.type) {
+    case "meeting_reminder":
+      return runMeetingReminder(job.payload as never);
     case "process_version":
       return processVersion((job.payload as { versionId: string }).versionId, job.attempts >= job.maxAttempts);
     default:

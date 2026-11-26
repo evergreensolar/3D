@@ -17,6 +17,10 @@ import { BrowserProcessor } from "./BrowserProcessor";
 import { PIPELINE_VERSION } from "@/lib/processing/version";
 import { enqueue } from "@/lib/jobs";
 import { UploadVersion } from "./UploadVersion";
+import { MeetingsCard } from "./MeetingsCard";
+import { videoProvider } from "@/lib/video";
+import { joinableNow } from "@/lib/meetings";
+import { sha256, verifyRecord } from "@/lib/approval";
 import { fixedOtpCode } from "@/lib/auth/otp";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +51,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     }
   }
   const busy = latest && (latest.status === "QUEUED" || latest.status === "PROCESSING");
+  const video = videoProvider();
+  const meetings = await db.meeting.findMany({ where: { projectId: p.id }, orderBy: { startsAt: "desc" }, take: 20, include: { designer: { select: { name: true } } } });
+  const approval = await db.approval.findFirst({ where: { projectId: p.id }, orderBy: { approvedAt: "desc" } });
+  let approvalCheck: { videoOk: boolean; recordOk: boolean; url: string } | null = null;
+  if (approval) {
+    const file = await storage().get(approval.videoKey).catch(() => null);
+    approvalCheck = {
+      videoOk: !!file && sha256(file) === approval.videoSha256,
+      recordOk: verifyRecord(approval),
+      url: await storage().getUrl(approval.videoKey, { expiresInSec: 3600 }),
+    };
+  }
   const modelUrl = ready?.modelKey ? await storage().getUrl(ready.modelKey, { expiresInSec: 6 * 3600 }) : null;
   const panelsUrl = ready?.panelsKey ? await storage().getUrl(ready.panelsKey, { expiresInSec: 6 * 3600 }) : null;
   const link = `${env.appUrl}/p/${p.shareToken}`;
@@ -62,7 +78,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           <div className="text-sm text-gray-500">{p.address}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`chip ${STATUS_STYLE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
+          <span className={`chip ${STATUS_STYLE[p.status]}`}>{p.status === "APPROVED" ? "✅ " : ""}{STATUS_LABEL[p.status]}</span>
           {canEdit && <Link href={`/team/projects/${p.id}/design`} className="btn-secondary">Design Studio</Link>}
           {canEdit && latest && <Link href={`/team/projects/${p.id}/panels`} className="btn-secondary">Tag panels</Link>}
           {canEdit && <Link href={`/team/projects/${p.id}/edit`} className="btn-secondary">Edit details</Link>}
@@ -91,6 +107,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               panelsUrl={panelsUrl}
               annotations={ready.annotations as unknown as Measure[] | null}
               annotateVersionId={canEdit ? ready.id : null}
+              comments={{ endpoint: `/api/team/projects/${p.id}/comments`, versionId: ready.id, team: true, locked: !!ready.lockedAt }}
               lat={p.latitude} lng={p.longitude} northOffsetDeg={p.northOffsetDeg}
               summary={ready.shadingSummary as unknown as ShadingSummary | null}
               energy={ready.energyEstimate as unknown as EnergyEstimate | null}
@@ -125,6 +142,31 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             <div className="mt-4"><SendToCustomer projectId={p.id} hasEmail={!!p.customerEmail} disabled={!ready} /></div>
             {p.sentToCustomerAt && <p className="mt-2 text-xs text-gray-500">Last sent {formatIST(p.sentToCustomerAt)}</p>}
           </section>
+
+          {approval && approvalCheck && (
+            <section className="card p-4 ring-2 ring-green-300">
+              <h2 className="font-semibold text-green-800">✅ Approved by customer</h2>
+              <p className="mt-1 text-xs text-gray-600">Version {approval.versionNumber} · {formatIST(approval.approvedAt)} · video + OTP</p>
+              <video src={approvalCheck.url} controls playsInline className="mt-2 aspect-[4/3] w-full rounded-lg bg-black" />
+              <blockquote className="mt-2 rounded-lg bg-gray-50 p-2 text-xs">“{approval.consentText}”</blockquote>
+              <dl className="mt-2 space-y-0.5 text-[11px] text-gray-600">
+                <div><dt className="inline font-medium">Customer:</dt> <dd className="inline">{approval.customerName} · {approval.customerMobile}</dd></div>
+                <div><dt className="inline font-medium">IP / device:</dt> <dd className="inline break-all">{approval.ip ?? "–"} · {approval.userAgent?.slice(0, 90) ?? "–"}</dd></div>
+                <div><dt className="inline font-medium">Video SHA-256:</dt> <dd className="inline break-all font-mono">{approval.videoSha256}</dd></div>
+              </dl>
+              <p className={`mt-2 rounded-lg p-2 text-xs font-semibold ${approvalCheck.videoOk && approvalCheck.recordOk ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
+                {approvalCheck.videoOk && approvalCheck.recordOk ? "Integrity check passed — the video and record are unchanged." : `Integrity check FAILED — ${!approvalCheck.videoOk ? "video file changed or missing" : "record was edited"}.`}
+              </p>
+            </section>
+          )}
+
+          <MeetingsCard
+            projectId={p.id} domain={video.domain} me={user.name} canBook={p.status !== "APPROVED"}
+            meetings={meetings.map((m) => ({
+              id: m.id, startsAt: m.startsAt.toISOString(), endsAt: m.endsAt.toISOString(), status: m.status, designer: m.designer.name, notes: m.notes,
+              room: video.roomForApi(m.roomName), joinUrl: video.joinUrl(m.roomName), joinable: joinableNow(m), upcoming: m.endsAt.getTime() > Date.now(),
+            }))}
+          />
 
           <section className="card p-4">
             <h2 className="font-semibold">Report</h2>

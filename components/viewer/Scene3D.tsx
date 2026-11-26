@@ -50,7 +50,12 @@ export interface Scene3DProps {
   onPick?: ((p: Vec3) => void) | null;
   measures?: Measure[];
   pending?: Vec3 | null;
+  /** Numbered comment pins on the model. */
+  pins?: Pin[];
+  onPinClick?: (id: string) => void;
 }
+
+export interface Pin { id: string; n: number; point: Vec3; resolved: boolean; active: boolean }
 
 function StageNode({ url, opts, panels, date, highlight, onSun, onReady, onHeading, onApi, onPick }: Scene3DProps) {
   const gltf = useLoader(GLTFLoader, url, (loader) => {
@@ -215,6 +220,22 @@ function Measures({ measures, pending }: { measures: Measure[]; pending?: Vec3 |
   );
 }
 
+function Pins({ pins, onClick }: { pins: Pin[]; onClick?: (id: string) => void }) {
+  return (
+    <>
+      {pins.map((p) => (
+        <Html key={p.id} position={p.point} zIndexRange={[25, 0]} style={{ transform: "translate(-50%, -100%)" }}>
+          <button
+            onClick={() => onClick?.(p.id)}
+            className={`flex h-7 min-w-7 items-center justify-center rounded-full rounded-bl-none px-1.5 text-xs font-bold text-white shadow-md ring-2 ring-white ${p.resolved ? "bg-gray-400" : "bg-violet-600"} ${p.active ? "scale-125" : ""}`}
+            title={`Comment ${p.n}`}
+          >{p.n}</button>
+        </Html>
+      ))}
+    </>
+  );
+}
+
 function Invalidate({ deps }: { deps: unknown[] }) {
   const { invalidate } = useThree();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -234,7 +255,8 @@ export default function Scene3D(props: Scene3DProps) {
     >
       <StageNode {...props} />
       <Measures measures={props.measures ?? []} pending={props.pending} />
-      <Invalidate deps={[props.measures, props.pending]} />
+      <Pins pins={props.pins ?? []} onClick={props.onPinClick} />
+      <Invalidate deps={[props.measures, props.pending, props.pins]} />
       <OrbitControls makeDefault enableDamping dampingFactor={0.12} maxPolarAngle={Math.PI / 2 - 0.03} />
     </Canvas>
   );

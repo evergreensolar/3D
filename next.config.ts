@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // camera/microphone are needed for Jitsi (phase 2) and video approval (phase 3)
-          { key: "Permissions-Policy", value: "camera=(self \"https://meet.jit.si\"), microphone=(self \"https://meet.jit.si\"), display-capture=(self \"https://meet.jit.si\"), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self \"https://meet.jit.si\" \"https://8x8.vc\"), microphone=(self \"https://meet.jit.si\" \"https://8x8.vc\"), display-capture=(self \"https://meet.jit.si\" \"https://8x8.vc\"), geolocation=()" },
         ],
       },
     ];
