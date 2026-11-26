@@ -38,6 +38,8 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [paste, setPaste] = useState("");
+  // Chunks already on the server for the chosen file (reused if only a form field needs fixing).
+  const [uploaded, setUploaded] = useState<{ file: File; id: string; chunks: number } | null>(null);
 
   const set = (k: keyof ProjectFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setV((s) => ({ ...s, [k]: e.target.value }));
@@ -66,23 +68,44 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
       router.refresh();
       return;
     }
-    // XHR for upload progress on slow site connections.
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/team/projects");
-    xhr.upload.onprogress = (ev) => ev.lengthComputable && setProgress(Math.round((ev.loaded / ev.total) * 100));
-    xhr.onload = () => {
-      setProgress(null);
-      let j: { id?: string; error?: string; fieldErrors?: FieldErrors } = {};
-      try { j = JSON.parse(xhr.responseText); } catch { /* ignore */ }
-      if (xhr.status >= 200 && xhr.status < 300 && j.id) router.push(`/team/projects/${j.id}`);
-      else {
-        setError(j.error ?? (xhr.status === 413 ? "The file is larger than the hosting allows. Try exporting the model without hidden layers/high-resolution textures." : `Upload failed (${xhr.status})`));
-        setErrors(j.fieldErrors ?? {});
-      }
-    };
-    xhr.onerror = () => { setProgress(null); setError("Network error during upload"); };
+    // Send the model in 5 MB pieces (works within host limits and survives flaky connections).
     setProgress(0);
-    xhr.send(fd);
+    try {
+      let up = uploaded;
+      if (!up || up.file !== file) {
+        const start = await fetch("/api/team/uploads", { method: "POST" });
+        const sj = await start.json();
+        if (!start.ok) throw new Error(sj.error ?? `Could not start upload (${start.status})`);
+        const n = Math.ceil(file!.size / sj.chunkBytes);
+        for (let i = 0; i < n; i++) {
+          const part = file!.slice(i * sj.chunkBytes, Math.min(file!.size, (i + 1) * sj.chunkBytes));
+          for (let attempt = 1; ; attempt++) {
+            const r = await fetch(`/api/team/uploads/${sj.id}?index=${i}`, { method: "PUT", body: part }).catch(() => null);
+            if (r?.ok) break;
+            if (attempt >= 4) throw new Error(`Upload stopped at ${Math.round((i / n) * 100)}% — please check the connection and try again.`);
+            await new Promise((res) => setTimeout(res, 1500 * attempt));
+          }
+          setProgress(Math.round(((i + 1) / n) * 100));
+        }
+        up = { file: file!, id: sj.id, chunks: n };
+        setUploaded(up);
+      }
+      fd.delete("model");
+      fd.append("uploadId", up.id);
+      fd.append("chunks", String(up.chunks));
+      fd.append("filename", file!.name);
+      setProgress(100);
+      const r = await fetch("/api/team/projects", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.id) { router.push(`/team/projects/${j.id}`); return; }
+      if (/incomplete/i.test(j.error ?? "")) setUploaded(null);
+      setError(j.error ?? `Upload failed (${r.status})`);
+      setErrors(j.fieldErrors ?? {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+      setUploaded(null);
+    }
+    setProgress(null);
   }
 
   const err = (k: keyof FieldErrors) => errors[k]?.[0] && <p className="mt-1 text-xs text-red-600">{errors[k]![0]}</p>;
@@ -183,7 +206,7 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
       <div className="flex items-center gap-3">
         <button className="btn-primary" disabled={progress !== null}>
-          {progress !== null ? (mode === "create" ? `Uploading ${progress}%` : "Saving…") : mode === "create" ? "Upload & process" : "Save changes"}
+          {progress !== null ? (mode === "create" ? (progress < 100 ? `Uploading ${progress}%` : "Saving…") : "Saving…") : mode === "create" ? "Upload & process" : "Save changes"}
         </button>
         <button type="button" className="btn-ghost" onClick={() => router.back()}>Cancel</button>
       </div>
