@@ -11,11 +11,26 @@ export const runtime = "nodejs";
 
 /** Create a project + Version 1 from a SketchUp export (multipart form). */
 export async function POST(req: Request) {
+  try {
+    return await createProject(req);
+  } catch (e) {
+    console.error("[upload] failed:", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: `Upload could not be saved: ${msg.split("\n").filter(Boolean).pop()?.slice(0, 300)}` }, { status: 500 });
+  }
+}
+
+async function createProject(req: Request) {
   const user = await getTeamUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if (user.role === "SALES") return NextResponse.json({ error: "Only designers and admins can upload designs" }, { status: 403 });
 
-  const form = await req.formData();
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "The upload was interrupted or is too large for the server. Please try again." }, { status: 413 });
+  }
   const file = form.get("model");
   if (!(file instanceof File) || file.size === 0) return NextResponse.json({ error: "Choose the model file exported from SketchUp" }, { status: 400 });
   if (file.size > MAX_MODEL_BYTES) return NextResponse.json({ error: "Model is larger than 300 MB" }, { status: 400 });

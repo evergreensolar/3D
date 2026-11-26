@@ -4,13 +4,12 @@ import { NextResponse, type NextRequest } from "next/server";
 // (getTeamUser / requireTeamUser) because the signing secret lives in the runtime config.
 export function middleware(req: NextRequest) {
   if (req.cookies.get("evg_t")?.value) return NextResponse.next();
-  if (req.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
   const url = req.nextUrl.clone();
   url.pathname = "/login";
   url.search = `?next=${encodeURIComponent(req.nextUrl.pathname)}`;
   return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/team/:path*", "/api/team/:path*"] };
+// Pages only. APIs check the session themselves — and must NOT pass through middleware, because
+// Next.js buffers at most 10 MB of a request body there, which breaks large model uploads.
+export const config = { matcher: ["/team/:path*"] };

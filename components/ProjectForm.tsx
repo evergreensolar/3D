@@ -75,7 +75,10 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
       let j: { id?: string; error?: string; fieldErrors?: FieldErrors } = {};
       try { j = JSON.parse(xhr.responseText); } catch { /* ignore */ }
       if (xhr.status >= 200 && xhr.status < 300 && j.id) router.push(`/team/projects/${j.id}`);
-      else { setError(j.error ?? `Upload failed (${xhr.status})`); setErrors(j.fieldErrors ?? {}); }
+      else {
+        setError(j.error ?? (xhr.status === 413 ? "The file is larger than the hosting allows. Try exporting the model without hidden layers/high-resolution textures." : `Upload failed (${xhr.status})`));
+        setErrors(j.fieldErrors ?? {});
+      }
     };
     xhr.onerror = () => { setProgress(null); setError("Network error during upload"); };
     setProgress(0);
