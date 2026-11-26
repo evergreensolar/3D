@@ -48,6 +48,8 @@ async function createProject(req: Request) {
   } else if (file instanceof File && file.size > 0) {
     buf = Buffer.from(await file.arrayBuffer());
     filename = file.name;
+  } else if (form.get("designInPortal") === "1") {
+    return createWithoutModel(user, parsed.data);
   } else {
     return NextResponse.json({ error: "Choose the model file exported from SketchUp" }, { status: 400 });
   }
@@ -94,6 +96,28 @@ async function createProject(req: Request) {
       await enqueue("process_version", { versionId: v.id });
       await logEvent(p.id, "version.uploaded", `user:${user.id}`, { version: 1, filename });
       return NextResponse.json({ id: p.id, code: p.code });
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === "P2002" && attempt < 3) continue;
+      throw e;
+    }
+  }
+}
+
+/** "Design in portal": create the project only; the Design Studio adds Version 1 on save. */
+async function createWithoutModel(user: { id: string; role: string }, d: import("@/lib/validation").ProjectInput) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const p = await db.project.create({
+        data: {
+          code: await nextProjectCode(),
+          customerSalutation: d.customerSalutation, customerName: d.customerName, customerMobile: d.customerMobile,
+          customerEmail: d.customerEmail || null, address: d.address, latitude: d.latitude, longitude: d.longitude,
+          northOffsetDeg: 0, panelMake: d.panelMake || null, panelModel: d.panelModel || null, panelWattage: d.panelWattage,
+          shareToken: newShareToken(), designerId: d.designerId || (user.role === "DESIGNER" ? user.id : null), createdById: user.id,
+        },
+      });
+      await logEvent(p.id, "project.created", `user:${user.id}`, { designInPortal: true });
+      return NextResponse.json({ id: p.id, code: p.code, design: true });
     } catch (e: unknown) {
       if ((e as { code?: string }).code === "P2002" && attempt < 3) continue;
       throw e;

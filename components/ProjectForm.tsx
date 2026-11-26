@@ -39,6 +39,7 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
   const [progress, setProgress] = useState<number | null>(null);
   const [paste, setPaste] = useState("");
   // Chunks already on the server for the chosen file (reused if only a form field needs fixing).
+  const [designHere, setDesignHere] = useState(false);
   const [uploaded, setUploaded] = useState<{ file: File; id: string; chunks: number } | null>(null);
 
   const set = (k: keyof ProjectFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -53,6 +54,18 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null); setErrors({});
+    if (mode === "create" && designHere) {
+      const fdd = new FormData();
+      Object.entries(v).forEach(([k, val]) => fdd.append(k, val));
+      fdd.append("designInPortal", "1");
+      setProgress(100);
+      const r = await fetch("/api/team/projects", { method: "POST", body: fdd });
+      const j = await r.json().catch(() => ({}));
+      setProgress(null);
+      if (r.ok && j.id) { router.push(`/team/projects/${j.id}/design`); return; }
+      setError(j.error ?? `Could not create the project (${r.status})`); setErrors(j.fieldErrors ?? {});
+      return;
+    }
     if (mode === "create" && !file) { setErrors({ model: ["Choose the model file exported from SketchUp"] }); return; }
     const fd = new FormData();
     Object.entries(v).forEach(([k, val]) => fd.append(k, val));
@@ -189,7 +202,18 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
 
       {mode === "create" && (
         <section className="card p-4 sm:p-6">
-          <h2 className="font-semibold">SketchUp model</h2>
+          <h2 className="font-semibold">Design</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {([[false, "Upload SketchUp model", "GLB / DAE exported from SketchUp"], [true, "Design in the portal", "Draw the roof on satellite imagery, place panels automatically"]] as const).map(([val, title, sub]) => (
+              <button type="button" key={String(val)} onClick={() => setDesignHere(val)}
+                className={`rounded-xl p-3 text-left ring-1 ${designHere === val ? "bg-brand-50 ring-2 ring-brand-500" : "bg-white ring-gray-300"}`}>
+                <div className="text-sm font-semibold">{title}</div>
+                <div className="text-xs text-gray-500">{sub}</div>
+              </button>
+            ))}
+          </div>
+          {!designHere && <>
+          <h3 className="mt-5 text-sm font-semibold">SketchUp model</h3>
           <p className="mt-1 text-xs text-gray-500">
             Export <b>.glb</b> (preferred) or <b>.dae</b> (COLLADA). For .dae with textures, zip the .dae together with its texture folder.
             Name each panel component &quot;Solar Panel …&quot; so shading can be calculated per panel.
@@ -200,13 +224,14 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
           />
           {file && <p className="mt-2 text-xs text-gray-600">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>}
           {err("model")}
+          </>}
         </section>
       )}
 
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
       <div className="flex items-center gap-3">
         <button className="btn-primary" disabled={progress !== null}>
-          {progress !== null ? (mode === "create" ? (progress < 100 ? `Uploading ${progress}%` : "Saving…") : "Saving…") : mode === "create" ? "Upload & process" : "Save changes"}
+          {progress !== null ? (mode === "create" ? (progress < 100 ? `Uploading ${progress}%` : "Saving…") : "Saving…") : mode === "create" ? (designHere ? "Create & open Design Studio" : "Upload & process") : "Save changes"}
         </button>
         <button type="button" className="btn-ghost" onClick={() => router.back()}>Cancel</button>
       </div>

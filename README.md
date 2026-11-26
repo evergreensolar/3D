@@ -64,6 +64,18 @@ difference between **cleaning regularly and never cleaning**. The model and its 
 The new-project form can be pre-filled from a URL, for example when opened from the ERP:
 `/team/projects/new?customerName=…&customerMobile=…&address=…&latitude=…&longitude=…&panelWattage=550`.
 
+## 3a. Design Studio (no SketchUp needed)
+
+When creating a project, choose **Design in the portal**. The studio shows the site on satellite imagery:
+trace the roof, set floors and parapet, add obstructions (stair room, water tank, neighbouring building, tree),
+set the panel Wp/size/tilt/direction/structure height/row gap/setback — panels fill the roof automatically and can be
+clicked off — and enter the inverter (DC/AC ratio is checked). Saving creates a design version that is processed
+exactly like an uploaded model. Satellite imagery: Esri World Imagery by default; set `MAP_TILE_URL` (with
+`{z}/{x}/{y}`) and `MAP_ATTRIBUTION` to use another provider such as Mapbox or Google Map Tiles (check the provider's terms).
+
+Revised designs: upload a new SketchUp export from the project page (**Upload revised model**) or save again from the
+Studio — each creates Version N+1; the customer link shows the newest version.
+
 ## 3b. Guide for the design team (SketchUp)
 
 - **Export**: `File → Export → 3D Model → glTF Binary (.glb)` (SketchUp 2025+, or a glTF exporter extension).

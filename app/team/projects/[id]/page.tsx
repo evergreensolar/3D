@@ -13,6 +13,7 @@ import type { EnergyEstimate } from "@/lib/energy/model";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import { CopyLink, SendToCustomer, Reprocess } from "./ProjectActions";
 import { BrowserProcessor } from "./BrowserProcessor";
+import { UploadVersion } from "./UploadVersion";
 import { fixedOtpCode } from "@/lib/auth/otp";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="flex items-center gap-2">
           <span className={`chip ${STATUS_STYLE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
+          {canEdit && <Link href={`/team/projects/${p.id}/design`} className="btn-secondary">Design Studio</Link>}
           {canEdit && latest && <Link href={`/team/projects/${p.id}/panels`} className="btn-secondary">Tag panels</Link>}
           {canEdit && <Link href={`/team/projects/${p.id}/edit`} className="btn-secondary">Edit details</Link>}
         </div>
@@ -81,7 +83,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               reportUrl={`/api/team/versions/${ready.id}/report`}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-gray-500">The 3D view appears here once processing finishes.</div>
+            p.versions.length === 0 && canEdit ? (
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+                <p className="text-base font-semibold">No design yet</p>
+                <p className="max-w-sm text-sm text-gray-500">Design the system here on satellite imagery, or upload a model exported from SketchUp.</p>
+                <Link href={`/team/projects/${p.id}/design`} className="btn-primary">Open Design Studio</Link>
+                <div className="w-72"><UploadVersion projectId={p.id} label="Upload SketchUp model" /></div>
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-gray-500">The 3D view appears here once processing finishes.</div>
+            )
           )}
         </div>
 
@@ -130,7 +141,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-xs text-gray-400">Uploading revised versions arrives in Phase 2.</p>
+            {canEdit && p.versions.length > 0 && p.status !== "APPROVED" && (
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <UploadVersion projectId={p.id} />
+                <p className="mt-1 text-[11px] text-gray-400">Or open the Design Studio to change the design there. The customer link always shows the newest version.</p>
+              </div>
+            )}
           </section>
 
           <section className="card p-4">

@@ -155,6 +155,10 @@ model DesignVersion {
   panelTags          Json?
   // Storage key of panels.json: the exact panel geometry used for shading (read by the viewer)
   panelsKey          String?
+  // "upload" (SketchUp export) or "studio" (designed in the portal's Design Studio)
+  source             String        @default("upload")
+  // Design Studio drawing (roof, obstructions, array, inverter) — lets the design be edited again
+  designJson         Json?
   // { min:[x,y,z], max:[x,y,z] } metres, Y-up
   bbox               Json?
   processingLog      String?       @db.Text

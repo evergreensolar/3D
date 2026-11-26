@@ -28,6 +28,9 @@ export function projectDetails(p: Project, v?: DesignVersion | null) {
     { label: "System size", value: p.systemSizeKw ? `${p.systemSizeKw} kWp` : "Calculated after processing" },
     { label: "Panels", value: panelLabel(p) },
     ...layoutLines(v?.layout as Layout | null | undefined),
+    ...(((v?.designJson as { inverter?: { name?: string; kw?: number } | null } | null)?.inverter?.kw)
+      ? [{ label: "Inverter", value: `${(v!.designJson as { inverter: { name?: string; kw: number } }).inverter.name || "Inverter"} · ${(v!.designJson as { inverter: { kw: number } }).inverter.kw} kW` }]
+      : []),
     ...(v ? [{ label: "Design version", value: `Version ${v.number}${v.processedAt ? ` · ${formatIST(v.processedAt, { dateStyle: "medium" })}` : ""}` }] : []),
   ];
 }
