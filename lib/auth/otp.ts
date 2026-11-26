@@ -10,6 +10,19 @@ const RESEND_COOLDOWN_SEC = 45;
 const MAX_PER_HOUR = 6;
 const MAX_ATTEMPTS = 5;
 
+/**
+ * While no real SMS / WhatsApp provider is connected (provider "console"), nothing can reach the
+ * customer, so the code is fixed at 000000. Set OTP_FIXED_CODE=off to disable, or to another
+ * 6-digit value. As soon as SMS_PROVIDER / WHATSAPP_PROVIDER is configured, real random codes are used.
+ */
+export function fixedOtpCode(channel: "SMS" | "WHATSAPP"): string | null {
+  const v = process.env.OTP_FIXED_CODE;
+  if (v === "off") return null;
+  if (v && /^\d{6}$/.test(v)) return v;
+  const provider = (channel === "SMS" ? process.env.SMS_PROVIDER : process.env.WHATSAPP_PROVIDER) || "console";
+  return provider === "console" ? "000000" : null;
+}
+
 const hash = (id: string, code: string) => createHmac("sha256", env.sessionSecret).update(`${id}:${code}`).digest("hex");
 
 export type SendOtpResult =
@@ -29,7 +42,7 @@ export async function sendOtp(project: Project, purpose: OtpPurpose, channel: "S
   if (recent.length >= MAX_PER_HOUR) return { ok: false, error: "Too many codes requested. Please try again in an hour." };
 
   const id = randomUUID();
-  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const code = fixedOtpCode(channel) ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
   await db.otpChallenge.create({
     data: {
       id, projectId: project.id, mobile: project.customerMobile, purpose, codeHash: hash(id, code),

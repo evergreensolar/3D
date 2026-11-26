@@ -13,6 +13,7 @@ import type { EnergyEstimate } from "@/lib/energy/model";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import { CopyLink, SendToCustomer, Reprocess } from "./ProjectActions";
 import { BrowserProcessor } from "./BrowserProcessor";
+import { fixedOtpCode } from "@/lib/auth/otp";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           <section className="card p-4">
             <h2 className="font-semibold">Share with customer</h2>
             <p className="mt-1 text-xs text-gray-500">Messages address the customer as &quot;{addressCustomer(p)}&quot;. They verify with an OTP on {p.customerMobile}.</p>
+            {fixedOtpCode("SMS") && (
+              <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                No SMS service is connected yet, so the customer&apos;s code is always <b>{fixedOtpCode("SMS")}</b>. Tell the customer when you share the link.
+              </p>
+            )}
             <div className="mt-3"><CopyLink url={link} /></div>
             <div className="mt-4"><SendToCustomer projectId={p.id} hasEmail={!!p.customerEmail} disabled={!ready} /></div>
             {p.sentToCustomerAt && <p className="mt-2 text-xs text-gray-500">Last sent {formatIST(p.sentToCustomerAt)}</p>}

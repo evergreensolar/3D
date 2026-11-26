@@ -192,6 +192,112 @@ function connectedComponents(tris: number[]): number[][] {
   return [...groups.values()];
 }
 
+// ---------------------------------------------------------------- shape-based detection
+// Fallback when nothing is named or coloured as a panel: any thin, roughly upward-facing
+// rectangle the size of a PV module (e.g. 2278 × 1134 × 35 mm) counts as a panel.
+export const PANEL_SHAPE = { minShort: 0.9, maxShort: 1.45, minLong: 1.55, maxLong: 2.7, maxThick: 0.08, minUp: 0.5 };
+
+/** Size of a triangle soup measured along its own axes: [thickness, short side, long side] and facing. */
+export function shapeOf(tris: ArrayLike<number>) {
+  const n = new THREE.Vector3();
+  const big = new THREE.Vector3();
+  let bigArea = 0;
+  const tn = new THREE.Vector3();
+  for (let i = 0; i < tris.length; i += 9) {
+    const a = triNormalArea(tris, i, tn);
+    if (a > bigArea) { bigArea = a; big.copy(tn); }
+  }
+  if (bigArea === 0) return null;
+  for (let i = 0; i < tris.length; i += 9) {
+    const a = triNormalArea(tris, i, tn);
+    const d = tn.dot(big);
+    if (Math.abs(d) > 0.9) n.addScaledVector(tn, a * Math.sign(d));
+  }
+  n.normalize();
+  const u = new THREE.Vector3(1, 0, 0);
+  if (Math.abs(n.dot(u)) > 0.9) u.set(0, 0, 1);
+  u.sub(n.clone().multiplyScalar(n.dot(u))).normalize();
+  const w = new THREE.Vector3().crossVectors(n, u);
+  // 2D principal axes in the panel plane
+  let mx = 0, my = 0;
+  const cnt = tris.length / 3;
+  const P = new THREE.Vector3();
+  const pts: number[] = [];
+  let tMin = Infinity, tMax = -Infinity;
+  for (let i = 0; i < tris.length; i += 3) {
+    P.set(tris[i], tris[i + 1], tris[i + 2]);
+    const t = P.dot(n);
+    tMin = Math.min(tMin, t); tMax = Math.max(tMax, t);
+    const x = P.dot(u), y = P.dot(w);
+    pts.push(x, y); mx += x; my += y;
+  }
+  mx /= cnt; my /= cnt;
+  let cxx = 0, cyy = 0, cxy = 0;
+  for (let i = 0; i < pts.length; i += 2) {
+    const dx = pts[i] - mx, dy = pts[i + 1] - my;
+    cxx += dx * dx; cyy += dy * dy; cxy += dx * dy;
+  }
+  const th = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+  const c = Math.cos(th), sn = Math.sin(th);
+  let aMin = Infinity, aMax = -Infinity, bMin = Infinity, bMax = -Infinity;
+  for (let i = 0; i < pts.length; i += 2) {
+    const a = pts[i] * c + pts[i + 1] * sn, b = -pts[i] * sn + pts[i + 1] * c;
+    aMin = Math.min(aMin, a); aMax = Math.max(aMax, a); bMin = Math.min(bMin, b); bMax = Math.max(bMax, b);
+  }
+  const s1 = aMax - aMin, s2 = bMax - bMin;
+  return { thick: tMax - tMin, short: Math.min(s1, s2), long: Math.max(s1, s2), up: Math.abs(n.y) };
+}
+
+export function looksLikePanel(tris: ArrayLike<number>) {
+  if (tris.length < 9) return false;
+  const sh = shapeOf(tris);
+  const S = PANEL_SHAPE;
+  return !!sh && sh.thick <= S.maxThick && sh.short >= S.minShort && sh.short <= S.maxShort && sh.long >= S.minLong && sh.long <= S.maxLong && sh.up >= S.minUp;
+}
+
+function detectByShape(root: THREE.Object3D): { name: string; tris: number[] }[] {
+  const meshTris = new Map<THREE.Mesh, { tris: number[]; box: THREE.Box3 }>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || isHelper(m)) return;
+    const tris: number[] = [];
+    pushMeshTriangles(m, tris);
+    const box = new THREE.Box3();
+    const v = new THREE.Vector3();
+    for (let i = 0; i < tris.length; i += 3) box.expandByPoint(v.set(tris[i], tris[i + 1], tris[i + 2]));
+    meshTris.set(m, { tris, box });
+  });
+  const out: { name: string; tris: number[] }[] = [];
+  const claimed = new Set<THREE.Mesh>();
+  const visit = (node: THREE.Object3D) => {
+    if (isHelper(node)) return;
+    const meshes = collectMeshes(node).filter((m) => meshTris.has(m) && !claimed.has(m));
+    if (!meshes.length) return;
+    const box = new THREE.Box3();
+    let count = 0;
+    meshes.forEach((m) => { const t = meshTris.get(m)!; box.union(t.box); count += t.tris.length / 9; });
+    const size = box.getSize(new THREE.Vector3());
+    if (node !== root && count <= 20000 && Math.max(size.x, size.y, size.z) <= PANEL_SHAPE.maxLong + 0.2) {
+      const tris = meshes.flatMap((m) => meshTris.get(m)!.tris);
+      if (looksLikePanel(tris)) {
+        out.push({ name: nodeName(node) || "Panel", tris });
+        meshes.forEach((m) => claimed.add(m));
+        return;
+      }
+    }
+    node.children.forEach(visit);
+  };
+  visit(root);
+  // Meshes that merge several loose panels: check each connected piece.
+  for (const [m, t] of meshTris) {
+    if (claimed.has(m) || t.tris.length / 9 > 200000) continue;
+    const size = t.box.getSize(new THREE.Vector3());
+    if (Math.max(size.x, size.y, size.z) <= PANEL_SHAPE.maxLong + 0.2) continue; // already checked as a node
+    for (const piece of connectedComponents(t.tris)) if (looksLikePanel(piece)) out.push({ name: "Panel", tris: piece });
+  }
+  return out;
+}
+
 export function detectPanels(root: THREE.Object3D): Panel[] {
   root.updateMatrixWorld(true);
   const found: { name: string; tris: number[] }[] = [];
@@ -234,6 +340,7 @@ export function detectPanels(root: THREE.Object3D): Panel[] {
     }
   });
   if (loose.length) connectedComponents(loose).forEach((tris) => found.push({ name: "Panel", tris }));
+  if (!found.length) found.push(...detectByShape(root));
 
   const panels = found
     .map((f) => buildPanel(f.name, f.tris))

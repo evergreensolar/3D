@@ -61,3 +61,24 @@ test("sample model: layout measurement and generation estimate", async () => {
   assert.ok(e.months[3].clean > e.months[6].clean, "April generates more than monsoon July");
   assert.equal(e.profile[0][0], 0, "no output at 5 AM in January");
 });
+
+test("panels are found by shape when nothing is named 'Solar Panel'", async () => {
+  const root = await loadSample();
+  let i = 0;
+  root.traverse((o) => {
+    o.name = `Component#${i++}`;
+    o.userData = {};
+    const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+    if (m) m.name = `Material${i}`;
+  });
+  root.updateMatrixWorld(true);
+  const panels = detectPanels(root);
+  assert.equal(panels.length, 12, "all 12 modules recognised by their size");
+  for (const p of panels) assert.ok(p.area > 2.3 && p.area < 2.7, `area ${p.area}`);
+});
+
+test("no panels → report data stays finite", async () => {
+  const { estimateEnergy } = await import("@/lib/energy/model");
+  const e = estimateEnergy({ lat: LAT, lng: LNG, northOffsetDeg: 0, panels: [], shadeAt: () => [] });
+  assert.ok(Number.isFinite(e.annual.clean) && Number.isFinite(e.performanceRatio));
+});

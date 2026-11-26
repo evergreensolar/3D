@@ -89,9 +89,9 @@ export async function buildReportPdf(o: {
     ["Site coordinates", `${p.latitude.toFixed(5)}° N, ${p.longitude.toFixed(5)}° E`],
     ["System size", p.systemSizeKw ? `${p.systemSizeKw} kWp (${o.detectedPanelCount} panels in the design)` : `${o.detectedPanelCount} panels in the design`],
     ["Panels", panelLabel(p)],
-    ["Tilt & direction", `${o.layout.tiltDeg}° facing ${compassPoint(o.layout.azimuthDeg)} (${o.layout.azimuthDeg}°)`],
+    ["Tilt & direction", o.detectedPanelCount ? `${o.layout.tiltDeg}° facing ${compassPoint(o.layout.azimuthDeg)} (${o.layout.azimuthDeg}°)` : "No panels found in the model"],
     ["Mounting structure", o.layout.structureHeightM !== null ? `${o.layout.structureType}, about ${o.layout.structureHeightM} m clear height` : o.layout.structureType],
-    ["Expected generation", p.systemSizeKw ? `about ${n0(o.energy.annual.clean * p.systemSizeKw)} units (kWh) per year` : `about ${n0(o.energy.annual.clean)} units per kWp per year`],
+    ["Expected generation", !o.detectedPanelCount ? "Not available (no panels found)" : p.systemSizeKw ? `about ${n0(o.energy.annual.clean * p.systemSizeKw)} units (kWh) per year` : `about ${n0(o.energy.annual.clean)} units per kWp per year`],
     ["Annual shading (9 AM–4 PM)", `${summary.annualPct}% of panel area on average`],
   ];
   const tableTop = doc.y;
@@ -238,6 +238,13 @@ export async function buildReportPdf(o: {
     });
     doc.y = ty0 + 74;
 
+    if (o.detectedPanelCount === 0 || !(E.annual.clean > 0)) {
+      doc.font("Helvetica").fontSize(11).fill("#92400e").text(
+        "No solar panels were recognised in the 3D model, so generation cannot be estimated. " +
+        "In SketchUp, make each panel a component named \"Solar Panel ...\" (or name the glass material \"Solar Panel\"), then upload again.",
+        40, doc.y, { width: pageW },
+      );
+    } else {
     // grouped bars: cleaned vs not cleaned
     doc.font("Helvetica-Bold").fontSize(11).fill(INK).text("Units by month", 40, doc.y);
     const ly = doc.y - 11;
@@ -288,6 +295,7 @@ export async function buildReportPdf(o: {
       `Cleaned: panels washed every 1-2 weeks (${a.soilingCleanPct}% dust loss). Not cleaned: dust loss ${Math.min(...a.soilingDirtyPct)}-${Math.max(...a.soilingDirtyPct)}% depending on the month; monsoon rain partly cleans the panels.`,
       `Panel temperature ${a.tempCoeffPctPerC}%/°C, inverter ${a.inverterEffPct}%, other losses ${a.otherLossPct}%. Performance ratio ${E.performanceRatio}. Figures are for an average year; actual generation varies with weather (about ±10%).`,
     ].forEach((t) => doc.text(`•  ${t}`, 40, doc.y, { width: pageW }).moveDown(0.25));
+    }
   }
 
   // Footer on every page
