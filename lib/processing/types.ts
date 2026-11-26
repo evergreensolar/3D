@@ -1,4 +1,6 @@
 import type { ShadingSummary } from "@/lib/scene/shading";
+import type { EnergyEstimate } from "@/lib/energy/model";
+import type { Layout } from "@/lib/scene/layout";
 
 export interface SnapshotMeta {
   name: string;
@@ -23,6 +25,8 @@ export interface ProcessingOutput {
   glb?: ArrayBuffer;
   snapshots: (SnapshotMeta & { dataUrl: string })[];
   summary: ShadingSummary;
+  energy: EnergyEstimate;
+  layout: Layout;
   panelCount: number;
   bbox: { min: number[]; max: number[] };
   log: string[];

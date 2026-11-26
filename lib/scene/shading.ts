@@ -69,6 +69,25 @@ export class ShadingEngine {
     return out;
   }
 
+  /**
+   * Distance along a ray to the first surface, skipping thin members within `skip` metres of the
+   * start (purlins/rails right under the panels). Returns null when nothing is hit.
+   */
+  distanceTo(origin: THREE.Vector3, dir: THREE.Vector3, skip = 0.3, max = 100): number | null {
+    if (!this.bvh) return null;
+    const ray = new THREE.Ray(origin.clone(), dir.clone().normalize());
+    let travelled = 0;
+    for (let i = 0; i < 6; i++) {
+      const hit = this.bvh.raycastFirst(ray, THREE.DoubleSide, 0, max - travelled);
+      if (!hit) return null;
+      travelled += hit.distance;
+      if (travelled >= skip) return travelled;
+      ray.origin.copy(hit.point).addScaledVector(ray.direction, 0.01);
+      travelled += 0.01;
+    }
+    return null;
+  }
+
   /** Area-weighted % of total panel area shaded. */
   areaShadedPct(fractions: Float32Array) {
     if (!this.totalArea) return 0;

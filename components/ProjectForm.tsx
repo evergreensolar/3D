@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
-import { parseLatLng, STRUCTURE_TYPES } from "@/lib/validation";
+import { parseLatLng } from "@/lib/validation";
 
 export interface ProjectFormValues {
   customerSalutation: string;
@@ -12,20 +12,15 @@ export interface ProjectFormValues {
   latitude: string;
   longitude: string;
   northOffsetDeg: string;
-  systemSizeKw: string;
-  panelCount: string;
   panelMake: string;
   panelModel: string;
   panelWattage: string;
-  structureHeightM: string;
-  structureType: string;
   designerId: string;
 }
 
 const EMPTY: ProjectFormValues = {
   customerSalutation: "MR", customerName: "", customerMobile: "", customerEmail: "", address: "",
-  latitude: "", longitude: "", northOffsetDeg: "0", systemSizeKw: "", panelCount: "", panelMake: "",
-  panelModel: "", panelWattage: "", structureHeightM: "", structureType: STRUCTURE_TYPES[0], designerId: "",
+  latitude: "", longitude: "", northOffsetDeg: "0", panelMake: "", panelModel: "", panelWattage: "", designerId: "",
 };
 
 type FieldErrors = Partial<Record<keyof ProjectFormValues | "model", string[]>>;
@@ -46,8 +41,6 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
 
   const set = (k: keyof ProjectFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setV((s) => ({ ...s, [k]: e.target.value }));
-
-  const suggestedKw = v.panelCount && v.panelWattage ? Math.round(Number(v.panelCount) * Number(v.panelWattage)) / 1000 : null;
 
   function onPaste(text: string) {
     setPaste(text);
@@ -142,35 +135,20 @@ export function ProjectForm({ mode, projectId, initial, designers }: {
       </section>
 
       <section className="card p-4 sm:p-6">
-        <h2 className="font-semibold">System</h2>
+        <h2 className="font-semibold">Panels</h2>
+        <p className="mt-1 text-xs text-gray-500">
+          Only the panel rating is needed. The number of panels, system size (kW), tilt, direction and structure height
+          are measured from the SketchUp model automatically.
+        </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-6">
-          <Field k="panelCount" label="Panel count" className="sm:col-span-2">
-            <input id="panelCount" className="input" inputMode="numeric" value={v.panelCount} onChange={set("panelCount")} required />
+          <Field k="panelWattage" label="Panel rating (Wp)" className="sm:col-span-2">
+            <input id="panelWattage" className="input" inputMode="numeric" placeholder="550" value={v.panelWattage} onChange={set("panelWattage")} required />
           </Field>
-          <Field k="panelWattage" label="Panel watt (Wp)" className="sm:col-span-2">
-            <input id="panelWattage" className="input" inputMode="numeric" placeholder="550" value={v.panelWattage} onChange={set("panelWattage")} />
+          <Field k="panelMake" label="Make (optional)" className="sm:col-span-2">
+            <input id="panelMake" className="input" placeholder="Waaree / Adani / Vikram / Tata" value={v.panelMake} onChange={set("panelMake")} />
           </Field>
-          <Field k="systemSizeKw" label="System size (kW)" className="sm:col-span-2">
-            <input id="systemSizeKw" className="input" inputMode="decimal" value={v.systemSizeKw} onChange={set("systemSizeKw")} required />
-            {suggestedKw && String(suggestedKw) !== v.systemSizeKw && (
-              <button type="button" className="mt-1 text-xs font-medium text-brand-700" onClick={() => setV((s) => ({ ...s, systemSizeKw: String(suggestedKw) }))}>
-                Use {suggestedKw} kW
-              </button>
-            )}
-          </Field>
-          <Field k="panelMake" label="Panel make" className="sm:col-span-3">
-            <input id="panelMake" className="input" placeholder="Waaree / Adani / Vikram / Tata" value={v.panelMake} onChange={set("panelMake")} required />
-          </Field>
-          <Field k="panelModel" label="Panel model" className="sm:col-span-3">
-            <input id="panelModel" className="input" value={v.panelModel} onChange={set("panelModel")} required />
-          </Field>
-          <Field k="structureType" label="Structure type" className="sm:col-span-4">
-            <select id="structureType" className="input" value={v.structureType} onChange={set("structureType")}>
-              {STRUCTURE_TYPES.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field k="structureHeightM" label="Structure height (m)" className="sm:col-span-2">
-            <input id="structureHeightM" className="input" inputMode="decimal" value={v.structureHeightM} onChange={set("structureHeightM")} required />
+          <Field k="panelModel" label="Model (optional)" className="sm:col-span-2">
+            <input id="panelModel" className="input" value={v.panelModel} onChange={set("panelModel")} />
           </Field>
           {designers.length > 0 && (
             <Field k="designerId" label="Designer" className="sm:col-span-3">

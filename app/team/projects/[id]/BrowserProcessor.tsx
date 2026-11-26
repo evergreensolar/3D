@@ -38,7 +38,7 @@ export function BrowserProcessor({ versionId }: { versionId: string }) {
         setStep("Building the PDF report…");
         const fd = new FormData();
         fd.append("meta", JSON.stringify({
-          snapshots: out.snapshots.map(({ dataUrl: _d, ...m }) => m), summary: out.summary,
+          snapshots: out.snapshots.map(({ dataUrl: _d, ...m }) => m), summary: out.summary, energy: out.energy, layout: out.layout,
           panelCount: out.panelCount, bbox: out.bbox, log: out.log,
         }));
         for (const s of out.snapshots) fd.append(`snap:${s.name}`, await (await fetch(s.dataUrl)).blob(), `${s.name}.jpg`);

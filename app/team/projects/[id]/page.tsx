@@ -6,9 +6,10 @@ import { STATUS_LABEL, STATUS_STYLE, VERSION_STATUS_LABEL } from "@/lib/projects
 import { storage } from "@/lib/storage";
 import { env } from "@/lib/env";
 import { formatIST } from "@/lib/time";
-import { projectDetails } from "@/lib/details";
+import { projectDetails, kwLabel } from "@/lib/details";
 import { addressCustomer } from "@/lib/notify/address";
 import type { ShadingSummary } from "@/lib/scene/shading";
+import type { EnergyEstimate } from "@/lib/energy/model";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import { CopyLink, SendToCustomer, Reprocess } from "./ProjectActions";
 import { BrowserProcessor } from "./BrowserProcessor";
@@ -34,14 +35,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const modelUrl = ready?.modelKey ? await storage().getUrl(ready.modelKey, { expiresInSec: 6 * 3600 }) : null;
   const link = `${env.appUrl}/p/${p.shareToken}`;
   const canEdit = user.role !== "SALES";
-  const mismatch = ready?.detectedPanelCount != null && ready.detectedPanelCount !== p.panelCount;
+  const noPanels = ready?.detectedPanelCount === 0;
 
   return (
     <main className="mx-auto max-w-7xl p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-xs text-gray-500"><Link href="/team" className="hover:underline">Projects</Link> / {p.code}</div>
-          <h1 className="text-xl font-semibold">{p.customerName} <span className="font-normal text-gray-500">· {p.systemSizeKw} kW</span></h1>
+          <h1 className="text-xl font-semibold">{p.customerName} <span className="font-normal text-gray-500">· {kwLabel(p)}</span></h1>
           <div className="text-sm text-gray-500">{p.address}</div>
         </div>
         <div className="flex items-center gap-2">
@@ -57,13 +58,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           {canEdit && <div className="mt-2"><Reprocess projectId={p.id} versionId={latest.id} label="Try again" /></div>}
         </div>
       )}
-      {mismatch && (
+      {noPanels && (
         <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
-          The model contains <b>{ready!.detectedPanelCount}</b> recognisable panels but the project says <b>{p.panelCount}</b>.
-          Check the panel count, or name each panel component &quot;Solar Panel …&quot; in SketchUp and re-export.
+          <b>No solar panels were recognised in this model</b>, so the system size, shading and generation can&apos;t be calculated.
+          In SketchUp, make each panel a component named &quot;Solar Panel …&quot; (or name the panel glass material &quot;Solar Panel&quot;), then re-export.
         </div>
       )}
-
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_340px]">
         <div className="card h-[78vh] min-h-[560px] overflow-hidden">
           {modelUrl && ready ? (
@@ -71,6 +71,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               modelUrl={modelUrl}
               lat={p.latitude} lng={p.longitude} northOffsetDeg={p.northOffsetDeg}
               summary={ready.shadingSummary as unknown as ShadingSummary | null}
+              energy={ready.energyEstimate as unknown as EnergyEstimate | null}
+              kwp={p.systemSizeKw}
               details={projectDetails(p, ready)}
               reportUrl={`/api/team/versions/${ready.id}/report`}
             />
@@ -98,7 +100,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             ) : <p className="mt-2 text-sm text-gray-500">Not generated yet.</p>}
             {ready && (
               <p className="mt-2 text-xs text-gray-500">
-                Version {ready.number} · {ready.detectedPanelCount} panels found · year-average shading {(ready.shadingSummary as unknown as ShadingSummary | null)?.annualPct ?? "–"}%
+                Version {ready.number} · {ready.detectedPanelCount} panels found in the model{p.systemSizeKw ? ` = ${p.systemSizeKw} kWp` : ""} · year-average shading {(ready.shadingSummary as unknown as ShadingSummary | null)?.annualPct ?? "–"}%
               </p>
             )}
           </section>

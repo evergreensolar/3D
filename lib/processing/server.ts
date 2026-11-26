@@ -7,6 +7,8 @@ import { buildReportPdf, type ReportImage } from "@/lib/report/pdf";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import { logEvent } from "@/lib/projects";
 import type { SnapshotMeta } from "./types";
+import type { EnergyEstimate } from "@/lib/energy/model";
+import type { Layout } from "@/lib/scene/layout";
 
 /** A version left "processing" this long (closed browser, crashed worker) can be claimed again. */
 export const STALE_MS = 4 * 60_000;
@@ -35,6 +37,8 @@ export interface FinalizeInput {
   glb?: Buffer; // converted model (DAE/ZIP uploads); GLB uploads reuse the original
   snapshots: (SnapshotMeta & { jpeg: Buffer })[];
   summary: ShadingSummary;
+  energy: EnergyEstimate;
+  layout: Layout;
   panelCount: number;
   bbox: { min: number[]; max: number[] };
   log: string[];
@@ -56,9 +60,19 @@ async function optimize(input: Buffer, log: string[]): Promise<Uint8Array> {
 }
 
 export async function finalizeVersion(versionId: string, r: FinalizeInput) {
-  const version = await db.designVersion.findUnique({ where: { id: versionId }, include: { project: true } });
-  if (!version) throw new Error("Version not found");
-  const { project } = version;
+  const found = await db.designVersion.findUnique({ where: { id: versionId }, include: { project: true } });
+  if (!found) throw new Error("Version not found");
+  // System size and structure come from the model, not from the form.
+  const project = await db.project.update({
+    where: { id: found.projectId },
+    data: {
+      panelCount: r.panelCount,
+      systemSizeKw: found.project.panelWattage ? Math.round(r.panelCount * found.project.panelWattage) / 1000 : null,
+      structureHeightM: r.layout.structureHeightM,
+      structureType: r.layout.structureType,
+    },
+  });
+  const version = { ...found, project };
   const s = storage();
 
   const glb = await optimize(r.glb ?? (await s.get(version.originalKey)), r.log);
@@ -79,7 +93,7 @@ export async function finalizeVersion(versionId: string, r: FinalizeInput) {
   const processedAt = new Date();
   const pdf = await buildReportPdf({
     project, version: { ...version, processedAt }, images, summary: r.summary,
-    liveUrl: `${appUrl}/p/${project.shareToken}`, detectedPanelCount: r.panelCount,
+    liveUrl: `${appUrl}/p/${project.shareToken}`, detectedPanelCount: r.panelCount, energy: r.energy, layout: r.layout,
   });
   const reportKey = keys.report(project.id, version.number);
   await s.put(reportKey, pdf, { contentType: "application/pdf" });
@@ -89,6 +103,7 @@ export async function finalizeVersion(versionId: string, r: FinalizeInput) {
     data: {
       status: "READY", modelKey, modelBytes: glb.byteLength, reportKey, snapshots: snapMeta,
       shadingSummary: r.summary as unknown as Prisma.InputJsonValue, detectedPanelCount: r.panelCount,
+      energyEstimate: r.energy as unknown as Prisma.InputJsonValue, layout: r.layout as unknown as Prisma.InputJsonValue,
       bbox: r.bbox, processedAt, processingError: null, processingLog: r.log.join("\n").slice(0, 20000),
     },
   });

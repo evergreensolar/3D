@@ -15,14 +15,13 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
   return (
     <main className="mx-auto max-w-3xl p-4">
       <h1 className="mb-1 text-xl font-semibold">Edit {p.code}</h1>
-      <p className="mb-4 text-sm text-gray-500">Changing the location, north rotation or system details re-processes the latest version (new shading and PDF).</p>
+      <p className="mb-4 text-sm text-gray-500">Changing the location, north rotation or panel rating re-processes the latest version (new shading and PDF).</p>
       <ProjectForm
         mode="edit" projectId={p.id} designers={await listDesigners()}
         initial={{
           customerSalutation: p.customerSalutation, customerName: p.customerName, customerMobile: p.customerMobile, customerEmail: s(p.customerEmail),
-          address: p.address, latitude: s(p.latitude), longitude: s(p.longitude), northOffsetDeg: s(p.northOffsetDeg), systemSizeKw: s(p.systemSizeKw),
-          panelCount: s(p.panelCount), panelMake: p.panelMake, panelModel: p.panelModel, panelWattage: s(p.panelWattage),
-          structureHeightM: s(p.structureHeightM), structureType: p.structureType, designerId: s(p.designerId),
+          address: p.address, latitude: s(p.latitude), longitude: s(p.longitude), northOffsetDeg: s(p.northOffsetDeg),
+          panelMake: s(p.panelMake), panelModel: s(p.panelModel), panelWattage: s(p.panelWattage), designerId: s(p.designerId),
         }}
       />
     </main>

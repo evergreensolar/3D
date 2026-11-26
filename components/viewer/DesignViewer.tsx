@@ -7,6 +7,8 @@ import type { ShadingSummary } from "@/lib/scene/shading";
 import { DATE_PRESETS, MONTH_DAY, SIM_YEAR, compassPoint, dayLight } from "@/lib/scene/sun";
 import { MONTHS, formatHour, istDate } from "@/lib/time";
 import { ShadingChart } from "./ShadingChart";
+import { GenerationPanel } from "./GenerationPanel";
+import { instantOutputKw, type EnergyEstimate } from "@/lib/energy/model";
 
 const Scene3D = dynamic(() => import("./Scene3D"), { ssr: false });
 
@@ -16,13 +18,17 @@ export interface DesignViewerProps {
   lng: number;
   northOffsetDeg: number;
   summary: ShadingSummary | null;
+  /** Per-kWp generation estimate from processing. */
+  energy?: EnergyEstimate | null;
+  /** System size; null until the panel rating is known. */
+  kwp?: number | null;
   details: { label: string; value: string }[];
   reportUrl?: string;
   /** Extra panel content (e.g. team actions) shown in the "Details" tab. */
   extra?: React.ReactNode;
 }
 
-type Tab = "sun" | "summary" | "details";
+type Tab = "sun" | "energy" | "summary" | "details";
 const PLAY_SECONDS = 14;
 
 export function DesignViewer(p: DesignViewerProps) {
@@ -34,12 +40,16 @@ export function DesignViewer(p: DesignViewerProps) {
   const [tab, setTab] = useState<Tab>("sun");
   const [sun, setSun] = useState<SunResult | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
+  const [normals, setNormals] = useState<[number, number, number][]>([]);
   const [error, setError] = useState<string | null>(null);
   const compassRef = useRef<HTMLDivElement>(null);
 
   const light = useMemo(() => dayLight(SIM_YEAR, month, day, p.lat, p.lng), [month, day, p.lat, p.lng]);
   const date = useMemo(() => istDate(SIM_YEAR, month, day, hour), [month, day, hour]);
   const opts = useMemo(() => ({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg }), [p.lat, p.lng, p.northOffsetDeg]);
+  const outputKw = sun && p.kwp && normals.length
+    ? instantOutputKw({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, date, month, normals, fractions: sun.fractions, kwp: p.kwp })
+    : null;
   const activePreset = DATE_PRESETS.find((d) => d.month === month && d.day === day)?.id;
 
   // "Animate the day": sunrise → sunset in PLAY_SECONDS.
@@ -83,7 +93,7 @@ export function DesignViewer(p: DesignViewerProps) {
               date={date}
               highlight={highlight}
               onSun={setSun}
-              onReady={(i) => setPanelCount(i.panelCount)}
+              onReady={(i) => { setPanelCount(i.panelCount); setNormals(i.normals); }}
               onHeading={onHeading}
             />
           </Suspense>
@@ -116,6 +126,7 @@ export function DesignViewer(p: DesignViewerProps) {
               {sun.shadedPanels === 0 ? "No shade on any panel" : `${sun.shadedPanels} of ${panelCount} panels have shade`}
             </span>
             <span className="text-gray-600">{sun.areaShadedPct.toFixed(1)}% of panel area</span>
+            {outputKw !== null && <span className="font-semibold text-brand-700">Average output now ≈ {outputKw.toFixed(1)} kW</span>}
             {highlight && sun.shadedPanels > 0 && (
               <span className="flex items-center gap-2 text-gray-600">
                 <i className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500" />partly
@@ -129,7 +140,7 @@ export function DesignViewer(p: DesignViewerProps) {
       {/* controls */}
       <div className="flex max-h-[54vh] flex-col border-t border-gray-200 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
         <div className="flex border-b border-gray-200 px-2" role="tablist">
-          {([["sun", "Sun & shadows"], ["summary", "Yearly shading"], ["details", "Details"]] as [Tab, string][]).map(([t, label]) => (
+          {([["sun", "Sun"], ["energy", "Generation"], ["summary", "Shading"], ["details", "Details"]] as [Tab, string][]).map(([t, label]) => (
             <button
               key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
               className={`flex-1 px-2 py-3 text-sm font-semibold border-b-2 -mb-px ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}
@@ -193,6 +204,11 @@ export function DesignViewer(p: DesignViewerProps) {
               )}
               <p className="text-xs text-gray-500">Drag to rotate, pinch to zoom, two fingers to move. Sun position is calculated for the exact site location.</p>
             </div>
+          )}
+
+          {tab === "energy" && (
+            p.energy ? <GenerationPanel energy={p.energy} kwp={p.kwp ?? null} month={month} hour={hour} onMonth={(m) => { setMonth(m); setDay(MONTH_DAY); }} />
+              : <p className="text-sm text-gray-500">The generation estimate is not available for this version yet. Re-process it to calculate.</p>
           )}
 
           {tab === "summary" && (

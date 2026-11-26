@@ -17,14 +17,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Please fix the highlighted fields", fieldErrors: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
   const d = parsed.data;
+  const before = await db.project.findUnique({ where: { id }, select: { panelCount: true } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const project = await db.project.update({
     where: { id },
     data: {
       customerSalutation: d.customerSalutation, customerName: d.customerName, customerMobile: d.customerMobile,
       customerEmail: d.customerEmail || null, address: d.address, latitude: d.latitude, longitude: d.longitude,
-      northOffsetDeg: d.northOffsetDeg, systemSizeKw: d.systemSizeKw, panelCount: d.panelCount, panelMake: d.panelMake,
-      panelModel: d.panelModel, panelWattage: d.panelWattage ?? null, structureHeightM: d.structureHeightM,
-      structureType: d.structureType, designerId: d.designerId || null,
+      northOffsetDeg: d.northOffsetDeg, panelMake: d.panelMake || null,
+      panelModel: d.panelModel || null, panelWattage: d.panelWattage, designerId: d.designerId || null,
+      systemSizeKw: before.panelCount ? Math.round(before.panelCount * d.panelWattage) / 1000 : null,
     },
   });
   const latest = await db.designVersion.findFirst({ where: { projectId: id }, orderBy: { number: "desc" } });

@@ -5,6 +5,10 @@ import type { Project, DesignVersion } from "@prisma/client";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import { addressCustomer } from "@/lib/notify/address";
 import { formatIST, MONTHS } from "@/lib/time";
+import type { EnergyEstimate } from "@/lib/energy/model";
+import type { Layout } from "@/lib/scene/layout";
+import { panelLabel } from "@/lib/details";
+import { compassPoint } from "@/lib/scene/sun";
 
 export interface ReportImage {
   label: string;
@@ -19,6 +23,9 @@ const INK = "#111827";
 const MUTED = "#6b7280";
 const RULE = "#e5e7eb";
 const BAR = "#3b5bdb";
+const CLEAN = "#2563eb";
+const DIRTY = "#b45309";
+const n0 = (x: number) => Math.round(x).toLocaleString("en-IN");
 
 export async function buildReportPdf(o: {
   project: Project;
@@ -27,6 +34,8 @@ export async function buildReportPdf(o: {
   summary: ShadingSummary;
   liveUrl: string;
   detectedPanelCount: number;
+  energy: EnergyEstimate;
+  layout: Layout;
 }): Promise<Buffer> {
   const { project: p, version: v, summary } = o;
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true, info: { Title: `Solar design report ${p.code} v${v.number}`, Author: "Evergreen Solar" } });
@@ -50,7 +59,7 @@ export async function buildReportPdf(o: {
 
   // ---------------- Page 1: project summary
   header(`Design report · ${p.code} · Version ${v.number}`);
-  doc.font("Helvetica-Bold").fontSize(20).text(`${p.systemSizeKw} kW Rooftop Solar System`, 40, doc.y);
+  doc.font("Helvetica-Bold").fontSize(20).text(`${p.systemSizeKw ? `${p.systemSizeKw} kW ` : ""}Rooftop Solar System`, 40, doc.y);
   doc.moveDown(0.2).font("Helvetica").fontSize(11).fill(MUTED)
     .text(`Prepared for ${addressCustomer(p)}  ·  ${formatIST(v.processedAt ?? new Date(), { dateStyle: "long" })}`);
   doc.fill(INK).moveDown(0.8);
@@ -69,9 +78,11 @@ export async function buildReportPdf(o: {
     ["Mobile", p.customerMobile],
     ["Site address", p.address],
     ["Site coordinates", `${p.latitude.toFixed(5)}° N, ${p.longitude.toFixed(5)}° E`],
-    ["System size", `${p.systemSizeKw} kWp`],
-    ["Panels", `${p.panelCount} × ${p.panelMake} ${p.panelModel}${p.panelWattage ? ` (${p.panelWattage} W)` : ""}`],
-    ["Mounting structure", `${p.structureType}, ${p.structureHeightM} m high`],
+    ["System size", p.systemSizeKw ? `${p.systemSizeKw} kWp (${o.detectedPanelCount} panels in the design)` : `${o.detectedPanelCount} panels in the design`],
+    ["Panels", panelLabel(p)],
+    ["Tilt & direction", `${o.layout.tiltDeg}° facing ${compassPoint(o.layout.azimuthDeg)} (${o.layout.azimuthDeg}°)`],
+    ["Mounting structure", o.layout.structureHeightM !== null ? `${o.layout.structureType}, about ${o.layout.structureHeightM} m clear height` : o.layout.structureType],
+    ["Expected generation", p.systemSizeKw ? `about ${n0(o.energy.annual.clean * p.systemSizeKw)} units (kWh) per year` : `about ${n0(o.energy.annual.clean)} units per kWp per year`],
     ["Annual shading (9 AM–4 PM)", `${summary.annualPct}% of panel area on average`],
   ];
   const tableTop = doc.y;
@@ -188,12 +199,87 @@ export async function buildReportPdf(o: {
   });
   doc.y = ty + 12;
   const notes = [
-    `Panels found in the 3D model: ${o.detectedPanelCount}${o.detectedPanelCount !== p.panelCount ? ` (project specifies ${p.panelCount})` : ""}. Total panel area analysed: ${summary.panelAreaM2} m².`,
+    `Panels found in the 3D model: ${o.detectedPanelCount}. Total panel area analysed: ${summary.panelAreaM2} m².`,
     "Shading here means the panel surface does not receive direct sunlight at that moment because an object (parapet, water tank, stair room, neighbouring building, tree, another panel row) blocks the sun. Diffuse light and weather are not included.",
     "This report is generated from the design model and is indicative. The installation follows the design version approved by the customer.",
   ];
   doc.font("Helvetica").fontSize(8.5).fill(MUTED);
   notes.forEach((n) => doc.text(`•  ${n}`, 40, doc.y, { width: pageW }).moveDown(0.3));
+
+  // ---------------- Page 5: generation estimate
+  {
+    const E = o.energy, k = p.systemSizeKw ?? 1, unit = p.systemSizeKw ? "units" : "units per kWp";
+    doc.addPage();
+    header("Expected generation");
+    doc.font("Helvetica-Bold").fontSize(13).fill(INK).text(`Estimated electricity generation${p.systemSizeKw ? ` of the ${p.systemSizeKw} kWp system` : ""}`, 40, doc.y);
+    doc.moveDown(0.6);
+    const tiles: [string, string, string][] = [
+      ["Per year, cleaned regularly", n0(E.annual.clean * k), unit],
+      ["Per year, never cleaned", n0(E.annual.dirty * k), `${unit} (${n0((E.annual.clean - E.annual.dirty) * k)} less)`],
+      ["Average per day", ((E.annual.clean * k) / 365).toFixed(1), unit],
+      ["Lost to shade per year", n0((E.annual.noShade - E.annual.clean) * k), unit],
+    ];
+    const tw = (pageW - 3 * 10) / 4, ty0 = doc.y;
+    tiles.forEach(([label, val, u], i) => {
+      const x = 40 + i * (tw + 10);
+      doc.roundedRect(x, ty0, tw, 58, 6).fill(i === 0 ? "#f0fdf4" : "#f9fafb");
+      doc.fill(MUTED).font("Helvetica").fontSize(8).text(label, x + 8, ty0 + 8, { width: tw - 16 });
+      doc.fill(INK).font("Helvetica-Bold").fontSize(16).text(val, x + 8, ty0 + 21, { width: tw - 16 });
+      doc.fill(MUTED).font("Helvetica").fontSize(7.5).text(u, x + 8, ty0 + 41, { width: tw - 16 });
+    });
+    doc.y = ty0 + 74;
+
+    // grouped bars: cleaned vs not cleaned
+    doc.font("Helvetica-Bold").fontSize(11).fill(INK).text("Units by month", 40, doc.y);
+    const ly = doc.y - 11;
+    doc.rect(40 + pageW - 170, ly + 2, 8, 8).fill(CLEAN); doc.fill(INK).font("Helvetica").fontSize(8.5).text("Cleaned regularly", 40 + pageW - 158, ly + 2);
+    doc.rect(40 + pageW - 75, ly + 2, 8, 8).fill(DIRTY); doc.fill(INK).text("Not cleaned", 40 + pageW - 63, ly + 2);
+    const cx = 75, cy = doc.y + 10, cw = pageW - 40, ch = 170;
+    const maxV = Math.max(...E.months.map((m) => m.clean * k));
+    const raw = maxV / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), stp = (raw / mag <= 1 ? 1 : raw / mag <= 2 ? 2 : raw / mag <= 5 ? 5 : 10) * mag;
+    const topV = Math.ceil(maxV / stp) * stp;
+    doc.font("Helvetica").fontSize(8).fill(MUTED);
+    for (let v = 0; v <= topV + 1e-9; v += stp) {
+      const gy = cy + ch - (ch * v) / topV;
+      doc.moveTo(cx, gy).lineTo(cx + cw, gy).lineWidth(0.5).strokeColor(v === 0 ? "#9ca3af" : RULE).stroke();
+      doc.fill(MUTED).text(n0(v), cx - 38, gy - 4, { width: 32, align: "right" });
+    }
+    const slot = cw / 12, bw = slot * 0.3;
+    E.months.forEach((m, i) => {
+      const x = cx + i * slot + (slot - 2 * bw - 2) / 2;
+      const hc = (ch * m.clean * k) / topV, hd = (ch * m.dirty * k) / topV;
+      doc.roundedRect(x, cy + ch - hc, bw, hc, Math.min(2.5, hc / 2)).fill(CLEAN);
+      doc.roundedRect(x + bw + 2, cy + ch - hd, bw, hd, Math.min(2.5, hd / 2)).fill(DIRTY);
+      doc.fill(MUTED).fontSize(8).text(MONTHS[i], x - 6, cy + ch + 4, { width: 2 * bw + 14, align: "center" });
+    });
+    doc.y = cy + ch + 24;
+
+    // table
+    const cols = ["Month", "Cleaned", "Not cleaned", "Per day (cleaned)", "Sunlight on panels (kWh/m²)"];
+    const cwid = [70, 90, 90, 110, pageW - 360];
+    let ty = doc.y;
+    doc.font("Helvetica-Bold").fontSize(8).fill(MUTED);
+    let xx = 40;
+    cols.forEach((c, i) => { doc.text(c, xx, ty, { width: cwid[i], align: i ? "right" : "left" }); xx += cwid[i]; });
+    ty += 13;
+    const rowsE = [...E.months.map((m, i) => [MONTHS[i], n0(m.clean * k), n0(m.dirty * k), ((m.clean * k) / m.days).toFixed(1), m.poa.toFixed(0)]),
+      ["Year", n0(E.annual.clean * k), n0(E.annual.dirty * k), ((E.annual.clean * k) / 365).toFixed(1), n0(E.months.reduce((s2, m) => s2 + m.poa, 0))]];
+    rowsE.forEach((r, ri) => {
+      if (ri % 2 === 0) doc.rect(40, ty - 2, pageW, 12).fill("#f9fafb");
+      doc.fill(INK).font(ri === 12 ? "Helvetica-Bold" : "Helvetica").fontSize(8);
+      xx = 40;
+      r.forEach((c, i) => { doc.text(String(c), xx, ty, { width: cwid[i], align: i ? "right" : "left" }); xx += cwid[i]; });
+      ty += 12;
+    });
+    doc.y = ty + 10;
+    const a = E.assumptions;
+    doc.font("Helvetica").fontSize(8).fill(MUTED);
+    [
+      E.method,
+      `Cleaned: panels washed every 1-2 weeks (${a.soilingCleanPct}% dust loss). Not cleaned: dust loss ${Math.min(...a.soilingDirtyPct)}-${Math.max(...a.soilingDirtyPct)}% depending on the month; monsoon rain partly cleans the panels.`,
+      `Panel temperature ${a.tempCoeffPctPerC}%/°C, inverter ${a.inverterEffPct}%, other losses ${a.otherLossPct}%. Performance ratio ${E.performanceRatio}. Figures are for an average year; actual generation varies with weather (about ±10%).`,
+    ].forEach((t) => doc.text(`•  ${t}`, 40, doc.y, { width: pageW }).moveDown(0.25));
+  }
 
   // Footer on every page
   const range = doc.bufferedPageRange();

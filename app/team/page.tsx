@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireTeamUser } from "@/lib/auth/session";
 import { STATUS_LABEL, STATUS_STYLE, VERSION_STATUS_LABEL } from "@/lib/projects";
 import { formatIST } from "@/lib/time";
+import { kwLabel } from "@/lib/details";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Projects" };
@@ -55,7 +56,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="truncate font-semibold">{p.customerName}</div>
-                      <div className="text-xs text-gray-500">{p.code} · {p.systemSizeKw} kW · {p.panelCount} panels</div>
+                      <div className="text-xs text-gray-500">{p.code} · {kwLabel(p)}{p.panelCount ? ` · ${p.panelCount} panels` : ""}</div>
                     </div>
                     <span className={`chip ${STATUS_STYLE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
                   </div>

@@ -35,3 +35,29 @@ test("sample model: panel detection and shading", async () => {
   const dec = s.months[11].shadedPct, jun = s.months[5].shadedPct;
   assert.ok(dec > jun, `winter (${dec}%) has more shade than summer (${jun}%)`);
 });
+
+test("sample model: layout measurement and generation estimate", async () => {
+  const { measureLayout } = await import("@/lib/scene/layout");
+  const { estimateEnergy } = await import("@/lib/energy/model");
+  const root = await loadSample();
+  root.updateMatrixWorld(true);
+  const panels = detectPanels(root);
+  const engine = new ShadingEngine(root, panels);
+  const layout = measureLayout(panels, engine, 0);
+  assert.equal(layout.tiltDeg, 15);
+  assert.equal(layout.azimuthDeg, 180, "faces due south");
+  assert.ok(layout.structureHeightM! >= 2.0 && layout.structureHeightM! <= 2.4, `structure ${layout.structureHeightM} m`);
+  assert.equal(layout.structureType, "Elevated structure");
+
+  const e = estimateEnergy({
+    lat: LAT, lng: LNG, northOffsetDeg: 0,
+    panels: panels.map((p) => ({ normal: [p.normal.x, p.normal.y, p.normal.z] as [number, number, number] })),
+    shadeAt: (m, h) => engine.panelShading(sunState(istDate(SIM_YEAR, m, 21, h), LAT, LNG).direction),
+  });
+  // West Bengal: roughly 3.6–4.3 units per kWp per day
+  assert.ok(e.annual.clean > 1300 && e.annual.clean < 1600, `clean ${e.annual.clean}`);
+  assert.ok(e.annual.dirty < e.annual.clean && e.annual.clean <= e.annual.noShade, JSON.stringify(e.annual));
+  assert.ok(e.annual.clean / e.annual.dirty > 1.04, "cleaning is worth several percent");
+  assert.ok(e.months[3].clean > e.months[6].clean, "April generates more than monsoon July");
+  assert.equal(e.profile[0][0], 0, "no output at 5 AM in January");
+});

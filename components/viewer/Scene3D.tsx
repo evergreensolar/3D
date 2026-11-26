@@ -21,7 +21,7 @@ export interface Scene3DProps {
   date: Date;
   highlight: boolean;
   onSun: (r: SunResult) => void;
-  onReady: (info: { panelCount: number }) => void;
+  onReady: (info: { panelCount: number; normals: [number, number, number][] }) => void;
   /** Receives the camera's true compass heading (degrees) whenever the view changes. */
   onHeading?: (deg: number) => void;
 }
@@ -56,7 +56,7 @@ function StageNode({ url, opts, date, highlight, onSun, onReady, onHeading }: Sc
       c.minDistance = Math.max(1, stage.radius * 0.08);
       c.update();
     }
-    onReady({ panelCount: stage.panels.length });
+    onReady({ panelCount: stage.panels.length, normals: stage.panels.map((x) => [x.normal.x, x.normal.y, x.normal.z] as [number, number, number]) });
     invalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, controls]);

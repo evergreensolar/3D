@@ -53,7 +53,18 @@ For development with ready-made team users: put `DATABASE_URL="mysql://…"` and
 Automated tests: `npm test` (respectful-address rule, sun maths for Kolkata, input parsing, panel detection and
 shading on the sample model). Type check: `npm run typecheck`.
 
-## 3. Guide for the design team (SketchUp)
+## 3. What the designer enters vs. what is measured
+
+The upload form asks only for the customer, the site location and the **panel rating (Wp)**; make/model are optional.
+From the SketchUp model the portal measures the **number of panels** (→ system size = panels × Wp), **tilt and
+direction**, and **structure height** (clear height under the panels → elevated / low-rise / flush). It then estimates
+**generation**: units per year and per month, a typical-day output curve for each month, the units lost to shade, and the
+difference between **cleaning regularly and never cleaning**. The model and its assumptions are in `lib/energy/model.ts`.
+
+The new-project form can be pre-filled from a URL, for example when opened from the ERP:
+`/team/projects/new?customerName=…&customerMobile=…&address=…&latitude=…&longitude=…&panelWattage=550`.
+
+## 3b. Guide for the design team (SketchUp)
 
 - **Export**: `File → Export → 3D Model → glTF Binary (.glb)` (SketchUp 2025+, or a glTF exporter extension).
   COLLADA `.dae` also works; if it has textures, zip the `.dae` together with its texture folder and upload the `.zip`.

@@ -6,7 +6,9 @@ import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { loadModel } from "@/lib/scene/load";
 import { DesignStage, VIEWS, type ViewName } from "@/lib/scene/stage";
-import { bearingVector, SIM_YEAR } from "@/lib/scene/sun";
+import { bearingVector, sunState, SIM_YEAR } from "@/lib/scene/sun";
+import { estimateEnergy } from "@/lib/energy/model";
+import { measureLayout } from "@/lib/scene/layout";
 import { istDate } from "@/lib/time";
 import type { ProcessingInput, ProcessingOutput } from "./types";
 
@@ -70,7 +72,16 @@ export async function runProcessing(p: ProcessingInput, say: (m: string) => void
     note("Calculating a year of shading");
     const summary = stage.engine.yearlySummary(p.lat, p.lng, p.northOffsetDeg);
     note(`Year-average shading ${summary.annualPct}%`);
-    return { glb, snapshots, summary, panelCount: stage.panels.length, bbox: { min: stage.bbox.min.toArray(), max: stage.bbox.max.toArray() }, log };
+    note("Measuring tilt, direction and structure height");
+    const layout = measureLayout(stage.panels, stage.engine, p.northOffsetDeg);
+    note("Estimating generation for every month");
+    const energy = estimateEnergy({
+      lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg,
+      panels: stage.panels.map((x) => ({ normal: [x.normal.x, x.normal.y, x.normal.z] as [number, number, number] })),
+      shadeAt: (month, hour) => stage.engine.panelShading(sunState(istDate(SIM_YEAR, month, 21, hour), p.lat, p.lng, p.northOffsetDeg).direction),
+    });
+    note(`About ${Math.round(energy.annual.clean)} kWh per kWp per year`);
+    return { glb, snapshots, summary, energy, layout, panelCount: stage.panels.length, bbox: { min: stage.bbox.min.toArray(), max: stage.bbox.max.toArray() }, log };
   } finally {
     renderer.dispose();
     renderer.forceContextLoss();

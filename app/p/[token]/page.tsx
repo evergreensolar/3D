@@ -10,6 +10,7 @@ import { addressCustomer } from "@/lib/notify/address";
 import { Logo } from "@/components/Logo";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import type { ShadingSummary } from "@/lib/scene/shading";
+import type { EnergyEstimate } from "@/lib/energy/model";
 import { OtpGate } from "./OtpGate";
 import { projectDetails } from "@/lib/details";
 
@@ -45,7 +46,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
       <header className="flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
         <Logo className="text-sm" />
         <div className="min-w-0 text-right">
-          <div className="truncate text-sm font-semibold">{project.systemSizeKw} kW · {project.code}</div>
+          <div className="truncate text-sm font-semibold">{project.systemSizeKw ? `${project.systemSizeKw} kW · ` : ""}{project.code}</div>
           <div className="text-xs text-gray-500">Design Version {version.number}</div>
         </div>
       </header>
@@ -59,6 +60,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
           lng={project.longitude}
           northOffsetDeg={project.northOffsetDeg}
           summary={version.shadingSummary as unknown as ShadingSummary | null}
+              energy={version.energyEstimate as unknown as EnergyEstimate | null}
+              kwp={project.systemSizeKw}
           details={projectDetails(project, version)}
           reportUrl={version.reportKey ? `/api/p/${token}/report` : undefined}
         />

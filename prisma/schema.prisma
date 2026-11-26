@@ -77,13 +77,15 @@ model Project {
   // Rotation (degrees, clockwise) from the model's "north" (SketchUp green axis) to true north.
   northOffsetDeg     Float         @default(0)
 
-  systemSizeKw       Float
-  panelCount         Int
-  panelMake          String
-  panelModel         String
+  // Entered by the designer: only the panel rating. Make/model are optional (shown in the PDF).
   panelWattage       Int?
-  structureHeightM   Float
-  structureType      String
+  panelMake          String?
+  panelModel         String?
+  // Derived from the SketchUp model after processing (panel count × Wp, measured structure height).
+  systemSizeKw       Float?
+  panelCount         Int?
+  structureHeightM   Float?
+  structureType      String?
 
   // Secret for the customer link /p/<shareToken>. Rotatable.
   shareToken         String        @unique
@@ -144,6 +146,10 @@ model DesignVersion {
   // { months: [{ month: 1..12, shadedPct }], hours: [...], method, samplesPerPanel, computedAt }
   shadingSummary     Json?
   detectedPanelCount Int?
+  // { tiltDeg, azimuthDeg, structureHeightM, structureType } measured from the model
+  layout             Json?
+  // Generation estimate per kWp (see lib/energy/model.ts)
+  energyEstimate     Json?
   // { min:[x,y,z], max:[x,y,z] } metres, Y-up
   bbox               Json?
   processingLog      String?       @db.Text

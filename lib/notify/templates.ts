@@ -23,16 +23,17 @@ export const templates = {
     };
   },
 
-  reportReady(c: Customer, v: { projectCode: string; systemSizeKw: number; version: number; link: string; reportUrl?: string }): Rendered {
+  reportReady(c: Customer, v: { projectCode: string; systemSizeKw: number | null; version: number; link: string; reportUrl?: string }): Rendered {
     const who = addressCustomer(c);
+    const size = v.systemSizeKw ? `${v.systemSizeKw} kW ` : "";
     return {
-      subject: `Your ${v.systemSizeKw} kW rooftop solar design is ready (${v.projectCode})`,
+      subject: `Your ${size}rooftop solar design is ready (${v.projectCode})`,
       text:
-        `Dear ${who},\n\nNamaskar. Your ${v.systemSizeKw} kW rooftop solar design (Project ${v.projectCode}, Version ${v.version}) is ready.\n\n` +
-        `View it in 3D on your phone, with the sun and shadows for any month and time of day:\n${v.link}\n\n` +
+        `Dear ${who},\n\nNamaskar. Your ${size}rooftop solar design (Project ${v.projectCode}, Version ${v.version}) is ready.\n\n` +
+        `View it in 3D on your phone, with the sun and shadows for any month and time of day, and the expected electricity generation:\n${v.link}\n\n` +
         (v.reportUrl ? `Download the design report (PDF):\n${v.reportUrl}\n\n` : "") +
         `You will be asked to verify your mobile number with a one-time code. If you have any questions, simply reply to this message.\n\nWith regards,\n${SIGN}`,
-      params: [who, String(v.systemSizeKw), v.projectCode, String(v.version), v.link],
+      params: [who, v.systemSizeKw ? String(v.systemSizeKw) : "-", v.projectCode, String(v.version), v.link],
     };
   },
 };

@@ -34,16 +34,6 @@ export function parseLatLng(input: string): { lat: number; lng: number } | null 
 
 const num = (min: number, max: number) => z.coerce.number().min(min).max(max);
 
-export const STRUCTURE_TYPES = [
-  "Elevated GI structure",
-  "Elevated MS (hot-dip galvanised) structure",
-  "Flush mount on RCC roof",
-  "Ballasted on RCC roof",
-  "Tin / metal sheet roof mount",
-  "Ground mount",
-  "Other",
-] as const;
-
 export const projectSchema = z.object({
   customerSalutation: z.enum(["MR", "MRS", "MS", "DR", "NONE"]),
   customerName: z.string().trim().min(2, "Enter the customer's name").max(120),
@@ -57,13 +47,10 @@ export const projectSchema = z.object({
   latitude: num(-90, 90),
   longitude: num(-180, 180),
   northOffsetDeg: num(-360, 360).default(0),
-  systemSizeKw: num(0.5, 2000),
-  panelCount: z.coerce.number().int().min(1).max(10000),
-  panelMake: z.string().trim().min(1, "Enter the panel make").max(80),
-  panelModel: z.string().trim().min(1, "Enter the panel model").max(80),
-  panelWattage: z.coerce.number().int().min(50).max(1000).optional().or(z.literal("").transform(() => undefined)),
-  structureHeightM: num(0, 20),
-  structureType: z.string().trim().min(1).max(80),
+  // Panel count, system size and structure are measured from the SketchUp model.
+  panelWattage: z.coerce.number({ message: "Enter the panel rating in Wp" }).int("Whole number, e.g. 550").min(100, "Between 100 and 1000 Wp").max(1000, "Between 100 and 1000 Wp"),
+  panelMake: z.string().trim().max(80).optional(),
+  panelModel: z.string().trim().max(80).optional(),
   designerId: z.string().optional().or(z.literal("")),
 });
 export type ProjectInput = z.infer<typeof projectSchema>;

@@ -16,7 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const form = await req.formData();
     const meta = JSON.parse(String(form.get("meta"))) as {
-      snapshots: SnapshotMeta[]; summary: never; panelCount: number; bbox: { min: number[]; max: number[] }; log: string[];
+      snapshots: SnapshotMeta[]; summary: never; energy: never; layout: never; panelCount: number; bbox: { min: number[]; max: number[] }; log: string[];
     };
     const snapshots = [];
     for (const s of meta.snapshots) {
@@ -27,7 +27,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const glbFile = form.get("glb");
     await finalizeVersion(id, {
       glb: glbFile instanceof File ? Buffer.from(await glbFile.arrayBuffer()) : undefined,
-      snapshots, summary: meta.summary, panelCount: meta.panelCount, bbox: meta.bbox,
+      snapshots, summary: meta.summary, energy: meta.energy, layout: meta.layout, panelCount: meta.panelCount, bbox: meta.bbox,
       log: [...meta.log, `processed in browser: ${req.headers.get("user-agent")?.slice(0, 120)}`],
     });
     return NextResponse.json({ ok: true });
