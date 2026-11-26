@@ -119,7 +119,9 @@ export class DesignStage {
       if (!mesh.isMesh) return;
       mb.setFromObject(mesh);
       mb.getSize(ms);
-      const terrain = Math.max(ms.x, ms.z) > 80 && ms.y < 3;
+      // wide and flat relative to its size (also catches SketchUp 3D terrain with gentle slopes)
+      const wide = Math.max(ms.x, ms.z);
+      const terrain = wide > 60 && ms.y < Math.max(3, wide * 0.08);
       if (terrain) { mesh.userData.evgTerrain = true; this.hasTerrain = true; }
       else site.union(mb);
     });
@@ -160,7 +162,7 @@ export class DesignStage {
       new THREE.MeshStandardMaterial({ color: "#cfc8b8", roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.set(this.center.x, this.groundY - 0.02, this.center.z);
+    ground.position.set(this.center.x, this.groundY - Math.max(0.05, this.radius * 0.002), this.center.z);
     ground.receiveShadow = true;
     ground.userData.evgHelper = true;
     ground.name = "__ground";
