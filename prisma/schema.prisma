@@ -159,6 +159,8 @@ model DesignVersion {
   source             String        @default("upload")
   // Design Studio drawing (roof, obstructions, array, inverter) — lets the design be edited again
   designJson         Json?
+  // Dimension lines saved by the team and shown to the customer: [{ a:[x,y,z], b:[x,y,z], label }]
+  annotations        Json?
   // { min:[x,y,z], max:[x,y,z] } metres, Y-up
   bbox               Json?
   processingLog      String?       @db.Text

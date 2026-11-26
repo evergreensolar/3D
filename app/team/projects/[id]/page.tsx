@@ -10,6 +10,7 @@ import { projectDetails, kwLabel } from "@/lib/details";
 import { addressCustomer } from "@/lib/notify/address";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import type { EnergyEstimate } from "@/lib/energy/model";
+import type { Measure } from "@/components/viewer/Scene3D";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import { CopyLink, SendToCustomer, Reprocess } from "./ProjectActions";
 import { BrowserProcessor } from "./BrowserProcessor";
@@ -75,6 +76,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             <DesignViewer
               modelUrl={modelUrl}
               panelsUrl={panelsUrl}
+              annotations={ready.annotations as unknown as Measure[] | null}
+              annotateVersionId={canEdit ? ready.id : null}
               lat={p.latitude} lng={p.longitude} northOffsetDeg={p.northOffsetDeg}
               summary={ready.shadingSummary as unknown as ShadingSummary | null}
               energy={ready.energyEstimate as unknown as EnergyEstimate | null}

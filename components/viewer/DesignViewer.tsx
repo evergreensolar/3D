@@ -8,6 +8,8 @@ import { DATE_PRESETS, MONTH_DAY, SIM_YEAR, compassPoint, dayLight } from "@/lib
 import { MONTHS, formatHour, istDate } from "@/lib/time";
 import { ShadingChart } from "./ShadingChart";
 import { GenerationPanel } from "./GenerationPanel";
+import { NavPad } from "./NavPad";
+import type { Measure, Vec3, ViewApi } from "./Scene3D";
 import { instantOutputKw, type EnergyEstimate } from "@/lib/energy/model";
 import { deserializePanels, type Panel, type PanelsFile } from "@/lib/scene/panels";
 
@@ -29,6 +31,10 @@ export interface DesignViewerProps {
   reportUrl?: string;
   /** Extra panel content (e.g. team actions) shown in the "Details" tab. */
   extra?: React.ReactNode;
+  /** Saved dimension lines (shown to everyone). */
+  annotations?: Measure[] | null;
+  /** Team: allow saving measurements for the customer to see. */
+  annotateVersionId?: string | null;
 }
 
 type Tab = "sun" | "energy" | "summary" | "details";
@@ -43,6 +49,28 @@ export function DesignViewer(p: DesignViewerProps) {
   const [tab, setTab] = useState<Tab>("sun");
   const [sun, setSun] = useState<SunResult | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
+  const [api, setApi] = useState<ViewApi | null>(null);
+  const [dragMode, setDragModeState] = useState<"rotate" | "move">("rotate");
+  const setDragMode = (m: "rotate" | "move") => { setDragModeState(m); api?.setDragMode(m); };
+  const [measuring, setMeasuring] = useState(false);
+  const [pending, setPending] = useState<Vec3 | null>(null);
+  const [savedMeasures, setSavedMeasures] = useState<Measure[]>(() => (p.annotations ?? []).map((m) => ({ ...m, saved: true })));
+  const [sessionMeasures, setSessionMeasures] = useState<Measure[]>([]);
+  const [measureMsg, setMeasureMsg] = useState<string | null>(null);
+  const onPick = useCallback((pt: Vec3) => {
+    setPending((first) => {
+      if (!first) return pt;
+      setSessionMeasures((s) => [...s, { a: first, b: pt }]);
+      return null;
+    });
+  }, []);
+  async function saveMeasures() {
+    if (!p.annotateVersionId) return;
+    const items = [...savedMeasures, ...sessionMeasures].map(({ a, b, label }) => ({ a, b, label: label?.trim() || undefined }));
+    const r = await fetch(`/api/team/versions/${p.annotateVersionId}/annotations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) });
+    if (r.ok) { setSavedMeasures(items.map((m) => ({ ...m, saved: true }))); setSessionMeasures([]); setMeasureMsg("Saved — the customer now sees these measurements."); }
+    else setMeasureMsg("Could not save the measurements.");
+  }
   const [normals, setNormals] = useState<[number, number, number][]>([]);
   const [weights, setWeights] = useState<number[]>([]);
   // undefined = still loading panels.json; null = none (detect from model)
@@ -111,6 +139,10 @@ export function DesignViewer(p: DesignViewerProps) {
               onSun={setSun}
               onReady={(i) => { setPanelCount(i.panelCount); setNormals(i.normals); setWeights(i.weights); }}
               onHeading={onHeading}
+              onApi={setApi}
+              onPick={measuring ? onPick : null}
+              measures={[...savedMeasures, ...sessionMeasures]}
+              pending={pending}
             />}
           </Suspense>
         </ErrorCatcher>
@@ -134,6 +166,18 @@ export function DesignViewer(p: DesignViewerProps) {
             </svg>
           </div>
         </div>
+
+        <NavPad api={api} dragMode={dragMode} setDragMode={setDragMode} measuring={measuring}
+          setMeasuring={(on) => { setMeasuring(on); setPending(null); if (on) setTab("details"); }} />
+        {measuring && (
+          <div className="absolute left-3 top-[72px] max-w-[60%] rounded-xl bg-pink-600 px-3 py-2 text-xs text-white shadow">
+            {pending ? "Tap the second point" : "Tap the first point on the model"}
+            <div className="mt-1 flex gap-3 font-semibold">
+              {sessionMeasures.length > 0 && <button className="underline" onClick={() => setSessionMeasures((s) => s.slice(0, -1))}>Undo</button>}
+              <button className="underline" onClick={() => { setMeasuring(false); setPending(null); }}>Done</button>
+            </div>
+          </div>
+        )}
 
         {/* shading status */}
         {sun?.sun.up && panelCount !== null && panelCount > 0 && (
@@ -218,7 +262,7 @@ export function DesignViewer(p: DesignViewerProps) {
               {panelCount === 0 && (
                 <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">No solar panels were recognised in this model, so shading cannot be highlighted.</p>
               )}
-              <p className="text-xs text-gray-500">Drag to rotate, pinch to zoom, two fingers to move. Sun position is calculated for the exact site location.</p>
+              <p className="text-xs text-gray-500">Use the buttons on the right to move (▲▼◀▶), rotate (⟲⟳) and zoom (+ −); ⌂ resets the view. “Rotate / Move” sets what a one-finger drag does. 📏 measures between two points. Sun position is calculated for the exact site location.</p>
             </div>
           )}
 
@@ -247,6 +291,33 @@ export function DesignViewer(p: DesignViewerProps) {
                   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor"><path d="M10 3v9m0 0l-4-4m4 4l4-4M4 15h12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" /></svg>
                   Download PDF report
                 </a>
+              )}
+              {(savedMeasures.length > 0 || sessionMeasures.length > 0) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Measurements</h3>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {[...savedMeasures.map((m, i) => ({ m, i, saved: true })), ...sessionMeasures.map((m, i) => ({ m, i, saved: false }))].map(({ m, i, saved }) => {
+                      const dist = Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1], m.b[2] - m.a[2]);
+                      const dh = Math.abs(m.b[1] - m.a[1]);
+                      const setLabel = (label: string) => (saved ? setSavedMeasures : setSessionMeasures)((list) => list.map((x, k) => (k === i ? { ...x, label } : x)));
+                      const remove = () => (saved ? setSavedMeasures : setSessionMeasures)((list) => list.filter((_, k) => k !== i));
+                      return (
+                        <li key={`${saved}-${i}`} className="flex items-center gap-2">
+                          <i className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${saved ? "bg-amber-500" : "bg-pink-500"}`} />
+                          {p.annotateVersionId ? (
+                            <input className="input min-w-0 flex-1 px-2 py-1 text-xs" placeholder="Label, e.g. Structure height" value={m.label ?? ""} onChange={(e) => setLabel(e.target.value)} />
+                          ) : <span className="min-w-0 flex-1 truncate text-xs text-gray-600">{m.label || (saved ? "Dimension" : "Your measurement")}</span>}
+                          <span className="shrink-0 text-xs font-semibold tabular-nums">{dist.toFixed(2)} m{dh > 0.05 && Math.abs(dh - dist) > 0.05 ? ` · ↕${dh.toFixed(2)}` : ""}</span>
+                          {(!saved || p.annotateVersionId) && <button className="text-xs text-red-600" onClick={remove} title="Remove">✕</button>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {p.annotateVersionId && (
+                    <button className="btn-secondary mt-2 w-full" onClick={saveMeasures}>Save measurements for the customer</button>
+                  )}
+                  {measureMsg && <p className="mt-1 text-xs text-gray-600">{measureMsg}</p>}
+                </div>
               )}
               {p.extra}
             </div>

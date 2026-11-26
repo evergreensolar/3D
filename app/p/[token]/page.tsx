@@ -11,6 +11,7 @@ import { Logo } from "@/components/Logo";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import type { EnergyEstimate } from "@/lib/energy/model";
+import type { Measure } from "@/components/viewer/Scene3D";
 import { OtpGate } from "./OtpGate";
 import { projectDetails } from "@/lib/details";
 
@@ -58,6 +59,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
         <DesignViewer
           modelUrl={modelUrl}
           panelsUrl={panelsUrl}
+          annotations={version.annotations as unknown as Measure[] | null}
           lat={project.latitude}
           lng={project.longitude}
           northOffsetDeg={project.northOffsetDeg}
