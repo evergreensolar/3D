@@ -166,6 +166,8 @@ model DesignVersion {
   processingLog      String?       @db.Text
   processingError    String?       @db.Text
   processedAt        DateTime?
+  // Version of the processing pipeline that produced the outputs; older ones are refreshed automatically
+  pipelineVersion    Int           @default(0)
   processingStartedAt DateTime?  // set when a browser or the worker claims the version
 
   // [P3] approval lock

@@ -7,6 +7,7 @@ import { buildReportPdf, type ReportImage } from "@/lib/report/pdf";
 import type { ShadingSummary } from "@/lib/scene/shading";
 import { logEvent } from "@/lib/projects";
 import type { SnapshotMeta } from "./types";
+import { PIPELINE_VERSION } from "./version";
 import type { EnergyEstimate } from "@/lib/energy/model";
 import type { Layout } from "@/lib/scene/layout";
 import type { PanelsFile } from "@/lib/scene/panels";
@@ -108,7 +109,7 @@ export async function finalizeVersion(versionId: string, r: FinalizeInput) {
   await db.designVersion.update({
     where: { id: versionId },
     data: {
-      status: "READY", modelKey, panelsKey, modelBytes: glb.byteLength, reportKey, snapshots: snapMeta,
+      status: "READY", modelKey, panelsKey, pipelineVersion: PIPELINE_VERSION, modelBytes: glb.byteLength, reportKey, snapshots: snapMeta,
       shadingSummary: r.summary as unknown as Prisma.InputJsonValue, detectedPanelCount: r.panelCount,
       energyEstimate: r.energy as unknown as Prisma.InputJsonValue, layout: r.layout as unknown as Prisma.InputJsonValue,
       bbox: r.bbox, processedAt, processingError: null, processingLog: r.log.join("\n").slice(0, 20000),

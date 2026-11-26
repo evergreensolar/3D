@@ -14,6 +14,8 @@ import type { Measure } from "@/components/viewer/Scene3D";
 import { DesignViewer } from "@/components/viewer/DesignViewer";
 import { CopyLink, SendToCustomer, Reprocess } from "./ProjectActions";
 import { BrowserProcessor } from "./BrowserProcessor";
+import { PIPELINE_VERSION } from "@/lib/processing/version";
+import { enqueue } from "@/lib/jobs";
 import { UploadVersion } from "./UploadVersion";
 import { fixedOtpCode } from "@/lib/auth/otp";
 
@@ -34,6 +36,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!p) notFound();
   const latest = p.versions[0];
   const ready = p.versions.find((v) => v.status === "READY");
+  // Made by an older version of the processing code? Refresh it now (new pictures, PDF, figures).
+  let refreshing = false;
+  if (latest && ready && latest.id === ready.id && !ready.lockedAt && ready.pipelineVersion < PIPELINE_VERSION && user.role !== "SALES") {
+    const r = await db.designVersion.updateMany({ where: { id: ready.id, status: "READY" }, data: { status: "QUEUED" } });
+    if (r.count) {
+      await enqueue("process_version", { versionId: ready.id });
+      latest.status = "QUEUED";
+      refreshing = true;
+    }
+  }
   const busy = latest && (latest.status === "QUEUED" || latest.status === "PROCESSING");
   const modelUrl = ready?.modelKey ? await storage().getUrl(ready.modelKey, { expiresInSec: 6 * 3600 }) : null;
   const panelsUrl = ready?.panelsKey ? await storage().getUrl(ready.panelsKey, { expiresInSec: 6 * 3600 }) : null;
@@ -57,6 +69,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
+      {refreshing && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">This design was made with an older version of the portal — updating the 3D view, shading, generation and PDF report now.</p>}
       {busy && <BrowserProcessor key={latest.id} versionId={latest.id} />}
       {latest?.status === "FAILED" && (
         <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">
@@ -115,12 +128,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
           <section className="card p-4">
             <h2 className="font-semibold">Report</h2>
-            {ready?.reportKey ? (
+            {busy ? (
+              <p className="mt-2 text-sm text-blue-800">A new report is being created…</p>
+            ) : ready?.reportKey ? (
               <div className="mt-3 flex gap-2">
                 <a className="btn-primary flex-1" href={`/api/team/versions/${ready.id}/report`}>Download PDF</a>
                 <a className="btn-secondary" href={`/api/team/versions/${ready.id}/report?view`} target="_blank" rel="noreferrer">Open</a>
               </div>
-            ) : <p className="mt-2 text-sm text-gray-500">Not generated yet.</p>}
+            ) : null}
+            {!busy && (ready?.reportKey && ready.processedAt ? (
+              <p className="mt-2 text-xs text-gray-500">Report created {formatIST(ready.processedAt)}</p>
+            ) : <p className="mt-2 text-sm text-gray-500">Not generated yet.</p>)}
             {ready && (
               <p className="mt-2 text-xs text-gray-500">
                 Version {ready.number} · {ready.detectedPanelCount} panels found in the model{p.systemSizeKw ? ` = ${p.systemSizeKw} kWp` : ""} · year-average shading {(ready.shadingSummary as unknown as ShadingSummary | null)?.annualPct ?? "–"}%
