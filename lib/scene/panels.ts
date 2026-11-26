@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 
-export const PANEL_NODE_RE = /(solar[\s_-]*(pv[\s_-]*)?(panel|module)|pv[\s_-]*(panel|module)|^(panel|module)(\b|_|\d|#))/i;
+export const PANEL_NODE_RE = /(solar[\s_-]*(pv[\s_-]*)?(panel|module)|pv[\s_-]*(panel|module)|(^|[\s_#.-])(panel|module)s?($|[\s_#.\d-]))/i;
 export const PANEL_MATERIAL_RE = /(solar[\s_-]*(panel|cell|glass|module)|pv[\s_-]*(cell|glass|module|panel))/i;
 
 /** Groups bigger than this (m² of top surface) that contain several matching children are split. */
@@ -18,6 +18,10 @@ export const SAMPLES_PER_PANEL = 64;
 export interface Panel {
   index: number;
   name: string;
+  /** Rating in Wp when tagged by the designer (otherwise the project default applies). */
+  wp?: number;
+  /** Node address in the original model (child indices from the root), when the panel is a node. */
+  path?: string;
   /** World-space top-surface triangles (9 floats per triangle). */
   tris: Float32Array;
   /** Per-triangle upward-oriented normal (3 floats per triangle). */
@@ -32,13 +36,16 @@ export interface Panel {
 export const isHelper = (o: THREE.Object3D) => !!o.userData.evgHelper;
 
 const nodeName = (o: THREE.Object3D) => `${o.userData?.name ?? ""} ${o.name ?? ""}`.trim();
-const nameMatches = (o: THREE.Object3D) => PANEL_NODE_RE.test(o.userData?.name ?? "") || PANEL_NODE_RE.test(o.name ?? "");
+/** Parts of a panel or of the mounting structure — never a whole panel on their own. */
+const PART_RE = /(frame|glass|cell|backsheet|junction|j[\s_-]?box|clamp|rail|purlin|rafter|leg|structure|mount|bracket|bolt|cable|wire)/i;
+const matchesName = (n: string) => PANEL_NODE_RE.test(n) && !PART_RE.test(n);
+const nameMatches = (o: THREE.Object3D) => matchesName(o.userData?.name ?? "") || matchesName(o.name ?? "");
 
 function materialName(m: THREE.Material | undefined) {
   return m ? `${m.name ?? ""} ${(m.userData as { name?: string })?.name ?? ""}` : "";
 }
 
-function collectMeshes(node: THREE.Object3D): THREE.Mesh[] {
+export function collectMeshes(node: THREE.Object3D): THREE.Mesh[] {
   const out: THREE.Mesh[] = [];
   node.traverse((o) => {
     if ((o as THREE.Mesh).isMesh && !isHelper(o)) out.push(o as THREE.Mesh);
@@ -255,7 +262,7 @@ export function looksLikePanel(tris: ArrayLike<number>) {
   return !!sh && sh.thick <= S.maxThick && sh.short >= S.minShort && sh.short <= S.maxShort && sh.long >= S.minLong && sh.long <= S.maxLong && sh.up >= S.minUp;
 }
 
-function detectByShape(root: THREE.Object3D): { name: string; tris: number[] }[] {
+function detectByShape(root: THREE.Object3D): { name: string; tris: number[]; path?: string }[] {
   const meshTris = new Map<THREE.Mesh, { tris: number[]; box: THREE.Box3 }>();
   root.traverse((o) => {
     const m = o as THREE.Mesh;
@@ -267,7 +274,7 @@ function detectByShape(root: THREE.Object3D): { name: string; tris: number[] }[]
     for (let i = 0; i < tris.length; i += 3) box.expandByPoint(v.set(tris[i], tris[i + 1], tris[i + 2]));
     meshTris.set(m, { tris, box });
   });
-  const out: { name: string; tris: number[] }[] = [];
+  const out: { name: string; tris: number[]; path?: string }[] = [];
   const claimed = new Set<THREE.Mesh>();
   const visit = (node: THREE.Object3D) => {
     if (isHelper(node)) return;
@@ -280,7 +287,7 @@ function detectByShape(root: THREE.Object3D): { name: string; tris: number[] }[]
     if (node !== root && count <= 20000 && Math.max(size.x, size.y, size.z) <= PANEL_SHAPE.maxLong + 0.2) {
       const tris = meshes.flatMap((m) => meshTris.get(m)!.tris);
       if (looksLikePanel(tris)) {
-        out.push({ name: nodeName(node) || "Panel", tris });
+        out.push({ name: nodeName(node) || "Panel", tris, path: nodePath(root, node) });
         meshes.forEach((m) => claimed.add(m));
         return;
       }
@@ -298,9 +305,20 @@ function detectByShape(root: THREE.Object3D): { name: string; tris: number[] }[]
   return out;
 }
 
-export function detectPanels(root: THREE.Object3D): Panel[] {
+export interface PanelTag {
+  path: string;
+  wp: number;
+  name?: string;
+}
+
+/**
+ * Finds the panels. With designer tags, exactly the tagged nodes are panels (each with its own Wp);
+ * otherwise panels are detected by name ("Solar Panel", "Module"…), material, or shape.
+ */
+export function detectPanels(root: THREE.Object3D, tags?: PanelTag[] | null): Panel[] {
   root.updateMatrixWorld(true);
-  const found: { name: string; tris: number[] }[] = [];
+  if (tags && tags.length) return panelsFromTags(root, tags);
+  const found: { name: string; tris: number[]; path?: string }[] = [];
   const claimed = new Set<THREE.Mesh>();
 
   const visit = (node: THREE.Object3D) => {
@@ -315,7 +333,7 @@ export function detectPanels(root: THREE.Object3D): Panel[] {
           node.children.forEach(visit); // a container like "Solar Panels" → look inside
           return;
         }
-        found.push({ name: nodeName(node), tris });
+        found.push({ name: nodeName(node), tris, path: nodePath(root, node) });
         meshes.forEach((m) => claimed.add(m));
         return;
       }
@@ -343,9 +361,83 @@ export function detectPanels(root: THREE.Object3D): Panel[] {
   if (!found.length) found.push(...detectByShape(root));
 
   const panels = found
-    .map((f) => buildPanel(f.name, f.tris))
+    .map((f): Omit<Panel, "index"> | null => { const b = buildPanel(f.name, f.tris); return b ? { ...b, path: f.path } : null; })
     .filter((p): p is Omit<Panel, "index"> => !!p)
     // Stable numbering: north → south, then west → east.
     .sort((a, b) => (Math.abs(a.center.z - b.center.z) > 0.5 ? a.center.z - b.center.z : a.center.x - b.center.x));
   return panels.map((p, index) => ({ ...p, index }));
+}
+
+
+// ---------------------------------------------------------------- node addresses & tags
+
+/** Address of a node as child indices from the root, e.g. "0.3.12". Stable for the same file + loader. */
+export function nodePath(root: THREE.Object3D, node: THREE.Object3D): string {
+  const parts: number[] = [];
+  let n: THREE.Object3D | null = node;
+  while (n && n !== root) {
+    const parent: THREE.Object3D | null = n.parent;
+    if (!parent) break;
+    parts.unshift(parent.children.indexOf(n));
+    n = parent;
+  }
+  return parts.join(".");
+}
+
+export function nodeAtPath(root: THREE.Object3D, path: string): THREE.Object3D | null {
+  if (path === "") return root;
+  let n: THREE.Object3D | undefined = root;
+  for (const i of path.split(".").map(Number)) {
+    n = n?.children[i];
+    if (!n) return null;
+  }
+  return n ?? null;
+}
+
+export function nodeTriangles(node: THREE.Object3D): number[] {
+  const tris: number[] = [];
+  collectMeshes(node).forEach((m) => pushMeshTriangles(m, tris));
+  return tris;
+}
+
+function panelsFromTags(root: THREE.Object3D, tags: PanelTag[]): Panel[] {
+  const out: Omit<Panel, "index">[] = [];
+  for (const t of tags) {
+    const node = nodeAtPath(root, t.path);
+    if (!node) continue;
+    const b = buildPanel(t.name || nodeName(node) || "Panel", nodeTriangles(node));
+    if (b) out.push({ ...b, wp: t.wp, path: t.path });
+  }
+  return out
+    .sort((a, b) => (Math.abs(a.center.z - b.center.z) > 0.5 ? a.center.z - b.center.z : a.center.x - b.center.x))
+    .map((p, index) => ({ ...p, index }));
+}
+
+// ---------------------------------------------------------------- panels.json (processing → viewer)
+
+const r4 = (a: ArrayLike<number>) => Array.from(a, (x) => Math.round(x * 1e4) / 1e4);
+
+export interface PanelsFile {
+  version: 1;
+  panels: { name: string; wp?: number; path?: string; area: number; normal: number[]; center: number[]; tris: number[]; triNormals: number[]; samples: number[]; sampleNormals: number[] }[];
+}
+
+export function serializePanels(panels: Panel[]): PanelsFile {
+  return {
+    version: 1,
+    panels: panels.map((p) => ({
+      name: p.name, wp: p.wp, path: p.path, area: Math.round(p.area * 1e4) / 1e4,
+      normal: r4(p.normal.toArray()), center: r4(p.center.toArray()),
+      tris: r4(p.tris), triNormals: r4(p.triNormals), samples: r4(p.samples), sampleNormals: r4(p.sampleNormals),
+    })),
+  };
+}
+
+export function deserializePanels(f: PanelsFile): Panel[] {
+  return f.panels.map((p, index) => ({
+    index, name: p.name, wp: p.wp, path: p.path, area: p.area,
+    normal: new THREE.Vector3().fromArray(p.normal), center: new THREE.Vector3().fromArray(p.center),
+    tris: new Float32Array(p.tris), triNormals: new Float32Array(p.triNormals),
+    samples: new Float32Array(p.samples), sampleNormals: new Float32Array(p.sampleNormals),
+  }));
 }

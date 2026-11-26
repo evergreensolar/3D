@@ -29,7 +29,7 @@ export async function processVersion(versionId: string, finalAttempt: boolean) {
     await finalizeVersion(versionId, {
       glb: r.glbBase64 ? Buffer.from(r.glbBase64, "base64") : undefined,
       snapshots: r.snapshots.map(({ dataUrl, ...m }) => ({ ...m, jpeg: Buffer.from(dataUrl.split(",")[1], "base64") })),
-      summary: r.summary, energy: r.energy, layout: r.layout, panelCount: r.panelCount, bbox: r.bbox, log: r.log,
+      summary: r.summary, energy: r.energy, layout: r.layout, totalWp: r.totalWp, panelsFile: r.panelsFile, panelCount: r.panelCount, bbox: r.bbox, log: r.log,
     });
   } catch (e) {
     await failVersion(versionId, e instanceof Error ? e.message : String(e), consoleLines.slice(-80).join("\n"), finalAttempt);

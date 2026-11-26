@@ -9,6 +9,7 @@ import { DesignStage, VIEWS, type ViewName } from "@/lib/scene/stage";
 import { bearingVector, sunState, SIM_YEAR } from "@/lib/scene/sun";
 import { estimateEnergy } from "@/lib/energy/model";
 import { measureLayout } from "@/lib/scene/layout";
+import { serializePanels } from "@/lib/scene/panels";
 import { istDate } from "@/lib/time";
 import type { ProcessingInput, ProcessingOutput } from "./types";
 
@@ -26,8 +27,12 @@ export async function runProcessing(p: ProcessingInput, say: (m: string) => void
     glb = (await new GLTFExporter().parseAsync(root, { binary: true })) as ArrayBuffer;
   }
   note("Finding the solar panels");
-  const stage = new DesignStage(root, { lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, shadowMapSize: 4096 });
-  note(`Panels found: ${stage.panels.length}`);
+  const stage = new DesignStage(root, { lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, shadowMapSize: 4096, tags: p.tags });
+  // Each panel's rating: its own tag, else the project default.
+  stage.panels.forEach((x) => { if (!x.wp && p.defaultWp) x.wp = p.defaultWp; });
+  const knownWp = stage.panels.length > 0 && stage.panels.every((x) => !!x.wp);
+  const totalWp = knownWp ? stage.panels.reduce((sum, x) => sum + (x.wp ?? 0), 0) : null;
+  note(`Panels: ${stage.panels.length}${p.tags?.length ? " (tagged by designer)" : " (auto-detected)"}${totalWp ? `, ${totalWp / 1000} kWp` : ""}`);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   try {
@@ -77,11 +82,11 @@ export async function runProcessing(p: ProcessingInput, say: (m: string) => void
     note("Estimating generation for every month");
     const energy = estimateEnergy({
       lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg,
-      panels: stage.panels.map((x) => ({ normal: [x.normal.x, x.normal.y, x.normal.z] as [number, number, number] })),
+      panels: stage.panels.map((x) => ({ normal: [x.normal.x, x.normal.y, x.normal.z] as [number, number, number], weight: x.wp ?? 1 })),
       shadeAt: (month, hour) => stage.engine.panelShading(sunState(istDate(SIM_YEAR, month, 21, hour), p.lat, p.lng, p.northOffsetDeg).direction),
     });
     note(`About ${Math.round(energy.annual.clean)} kWh per kWp per year`);
-    return { glb, snapshots, summary, energy, layout, panelCount: stage.panels.length, bbox: { min: stage.bbox.min.toArray(), max: stage.bbox.max.toArray() }, log };
+    return { glb, snapshots, summary, energy, layout, totalWp, panelsFile: serializePanels(stage.panels), panelCount: stage.panels.length, bbox: { min: stage.bbox.min.toArray(), max: stage.bbox.max.toArray() }, log };
   } finally {
     renderer.dispose();
     renderer.forceContextLoss();

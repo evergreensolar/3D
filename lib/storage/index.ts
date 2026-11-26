@@ -26,6 +26,7 @@ export const keys = {
   model: (projectId: string, v: number) => `projects/${projectId}/v${v}/model.glb`,
   snapshot: (projectId: string, v: number, name: string) => `projects/${projectId}/v${v}/snapshots/${name}.jpg`,
   report: (projectId: string, v: number) => `projects/${projectId}/v${v}/report.pdf`,
+  panels: (projectId: string, v: number) => `projects/${projectId}/v${v}/panels.json`,
 };
 
 export type { StorageProvider } from "./types";

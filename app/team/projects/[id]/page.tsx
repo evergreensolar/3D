@@ -34,6 +34,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const ready = p.versions.find((v) => v.status === "READY");
   const busy = latest && (latest.status === "QUEUED" || latest.status === "PROCESSING");
   const modelUrl = ready?.modelKey ? await storage().getUrl(ready.modelKey, { expiresInSec: 6 * 3600 }) : null;
+  const panelsUrl = ready?.panelsKey ? await storage().getUrl(ready.panelsKey, { expiresInSec: 6 * 3600 }) : null;
   const link = `${env.appUrl}/p/${p.shareToken}`;
   const canEdit = user.role !== "SALES";
   const noPanels = ready?.detectedPanelCount === 0;
@@ -48,6 +49,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="flex items-center gap-2">
           <span className={`chip ${STATUS_STYLE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
+          {canEdit && latest && <Link href={`/team/projects/${p.id}/panels`} className="btn-secondary">Tag panels</Link>}
           {canEdit && <Link href={`/team/projects/${p.id}/edit`} className="btn-secondary">Edit details</Link>}
         </div>
       </div>
@@ -62,7 +64,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       {noPanels && (
         <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
           <b>No solar panels were recognised in this model</b>, so the system size, shading and generation can&apos;t be calculated.
-          In SketchUp, make each panel a component named &quot;Solar Panel …&quot; (or name the panel glass material &quot;Solar Panel&quot;), then re-export.
+          {canEdit && <> <Link href={`/team/projects/${p.id}/panels`} className="font-semibold underline">Tag the panels yourself</Link> — click them in the model and enter their Wp.</>}
         </div>
       )}
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_340px]">
@@ -70,6 +72,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           {modelUrl && ready ? (
             <DesignViewer
               modelUrl={modelUrl}
+              panelsUrl={panelsUrl}
               lat={p.latitude} lng={p.longitude} northOffsetDeg={p.northOffsetDeg}
               summary={ready.shadingSummary as unknown as ShadingSummary | null}
               energy={ready.energyEstimate as unknown as EnergyEstimate | null}

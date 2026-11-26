@@ -150,6 +150,11 @@ model DesignVersion {
   layout             Json?
   // Generation estimate per kWp (see lib/energy/model.ts)
   energyEstimate     Json?
+  // Panels tagged by the designer in the panel editor: { panels: [{ path, wp, name }], updatedAt }
+  // (path = child indices from the model root, as loaded from the original upload). Null = auto-detect.
+  panelTags          Json?
+  // Storage key of panels.json: the exact panel geometry used for shading (read by the viewer)
+  panelsKey          String?
   // { min:[x,y,z], max:[x,y,z] } metres, Y-up
   bbox               Json?
   processingLog      String?       @db.Text

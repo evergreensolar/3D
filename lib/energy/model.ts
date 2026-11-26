@@ -54,6 +54,8 @@ export const DEFAULT_ASSUMPTIONS: EnergyAssumptions = {
 export interface PanelGeom {
   /** Upward unit normal of the panel surface, model coordinates. */
   normal: [number, number, number];
+  /** Relative weight — the panel's Wp when panels differ (default 1). */
+  weight?: number;
 }
 
 export interface EnergyEstimate {
@@ -137,15 +139,21 @@ export function irradianceTable(lat: number, lng: number, northOffsetDeg: number
 export function instantOutputKw(o: {
   lat: number; lng: number; northOffsetDeg: number; date: Date; month: number;
   normals: [number, number, number][]; fractions: ArrayLike<number>; kwp: number; cleaned?: boolean;
+  /** Per-panel weights (Wp) when panels differ. */
+  weights?: number[];
   assumptions?: EnergyAssumptions;
 }) {
   const a = o.assumptions ?? DEFAULT_ASSUMPTIONS;
   const irr = irradianceAt(o.lat, o.lng, o.northOffsetDeg, o.date, o.month);
   if (!irr.up || !o.normals.length) return 0;
   const soil = o.cleaned === false ? a.soilingDirtyPct[o.month - 1] : a.soilingCleanPct;
-  let sum = 0;
-  o.normals.forEach((n, k) => { sum += acPerKwp(panelPoa(n, irr, o.fractions[k] ?? 0, a.albedo), irr.tempC, soil, a); });
-  return (sum / o.normals.length) * o.kwp;
+  let sum = 0, wsum = 0;
+  o.normals.forEach((n, k) => {
+    const w = o.weights?.[k] ?? 1;
+    sum += acPerKwp(panelPoa(n, irr, o.fractions[k] ?? 0, a.albedo), irr.tempC, soil, a) * w;
+    wsum += w;
+  });
+  return wsum ? (sum / wsum) * o.kwp : 0;
 }
 
 /** Irradiance on one panel (W/m²), beam reduced by its shaded fraction. */
@@ -177,7 +185,7 @@ export function estimateEnergy(o: {
   assumptions?: EnergyAssumptions;
 }): EnergyEstimate {
   const a = o.assumptions ?? DEFAULT_ASSUMPTIONS;
-  const n = Math.max(1, o.panels.length);
+  const n = Math.max(1e-9, o.panels.reduce((sum, p) => sum + (p.weight ?? 1), 0)); // total weight
   const months: EnergyEstimate["months"] = [];
   const profile: number[][] = [];
   let poaYear = 0;
@@ -190,12 +198,13 @@ export function estimateEnergy(o: {
       let pClean = 0, pDirty = 0, pFree = 0, poaSum = 0;
       if (irr.up) {
         o.panels.forEach((p, k) => {
+          const w = p.weight ?? 1;
           const poa = panelPoa(p.normal, irr, f![k] ?? 0, a.albedo);
           const free = panelPoa(p.normal, irr, 0, a.albedo);
-          poaSum += poa;
-          pClean += acPerKwp(poa, irr.tempC, a.soilingCleanPct, a);
-          pDirty += acPerKwp(poa, irr.tempC, a.soilingDirtyPct[month - 1], a);
-          pFree += acPerKwp(free, irr.tempC, a.soilingCleanPct, a);
+          poaSum += poa * w;
+          pClean += acPerKwp(poa, irr.tempC, a.soilingCleanPct, a) * w;
+          pDirty += acPerKwp(poa, irr.tempC, a.soilingDirtyPct[month - 1], a) * w;
+          pFree += acPerKwp(free, irr.tempC, a.soilingCleanPct, a) * w;
         });
       }
       // average over panels → per kWp

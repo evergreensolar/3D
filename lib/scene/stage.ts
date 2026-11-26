@@ -2,7 +2,7 @@
 // ground, compass, per-panel shading overlays. Plain three.js so the R3F viewer and the
 // headless processor render exactly the same thing.
 import * as THREE from "three";
-import { detectPanels, type Panel } from "./panels";
+import { detectPanels, type Panel, type PanelTag } from "./panels";
 import { ShadingEngine, isSeeThrough } from "./shading";
 import { sunState, bearingVector, type SunState } from "./sun";
 
@@ -11,6 +11,10 @@ export interface StageOptions {
   lng: number;
   northOffsetDeg: number;
   shadowMapSize?: number;
+  /** Designer-tagged panels (node paths + Wp). */
+  tags?: PanelTag[] | null;
+  /** Ready-made panels from processing (panels.json) — used by the viewer. */
+  panels?: Panel[] | null;
 }
 
 export interface SunResult {
@@ -105,7 +109,8 @@ export class DesignStage {
     this.radius = Math.max(this.bbox.getSize(new THREE.Vector3()).length() / 2, 1);
     this.groundY = this.bbox.min.y;
 
-    this.panels = detectPanels(model);
+    // Tag paths refer to the model AFTER prepareModel (the panel editor prepares it the same way).
+    this.panels = opts.panels?.length ? opts.panels : detectPanels(model, opts.tags);
     this.engine = new ShadingEngine(model, this.panels);
 
     // Lights

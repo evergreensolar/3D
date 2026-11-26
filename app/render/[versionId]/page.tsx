@@ -26,6 +26,8 @@ export default async function RenderPage({ params, searchParams }: {
       lat={v.project.latitude}
       lng={v.project.longitude}
       northOffsetDeg={v.project.northOffsetDeg}
+      tags={(v.panelTags as { panels?: never[] } | null)?.panels ?? null}
+      defaultWp={v.project.panelWattage}
     />
   );
 }

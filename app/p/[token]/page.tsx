@@ -40,6 +40,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
     );
   }
   const modelUrl = await storage().getUrl(version.modelKey, { expiresInSec: 6 * 3600 });
+  const panelsUrl = version.panelsKey ? await storage().getUrl(version.panelsKey, { expiresInSec: 6 * 3600 }) : null;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -56,6 +57,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ token
       <div className="min-h-0 flex-1">
         <DesignViewer
           modelUrl={modelUrl}
+          panelsUrl={panelsUrl}
           lat={project.latitude}
           lng={project.longitude}
           northOffsetDeg={project.northOffsetDeg}

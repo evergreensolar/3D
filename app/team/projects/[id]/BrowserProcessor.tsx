@@ -38,10 +38,11 @@ export function BrowserProcessor({ versionId }: { versionId: string }) {
         setStep("Building the PDF report…");
         const fd = new FormData();
         fd.append("meta", JSON.stringify({
-          snapshots: out.snapshots.map(({ dataUrl: _d, ...m }) => m), summary: out.summary, energy: out.energy, layout: out.layout,
+          snapshots: out.snapshots.map(({ dataUrl: _d, ...m }) => m), summary: out.summary, energy: out.energy, layout: out.layout, totalWp: out.totalWp,
           panelCount: out.panelCount, bbox: out.bbox, log: out.log,
         }));
         for (const s of out.snapshots) fd.append(`snap:${s.name}`, await (await fetch(s.dataUrl)).blob(), `${s.name}.jpg`);
+        fd.append("panels", new Blob([JSON.stringify(out.panelsFile)], { type: "application/json" }), "panels.json");
         if (out.glb) fd.append("glb", new Blob([out.glb], { type: "model/gltf-binary" }), "model.glb");
         const r = await fetch(`/api/team/versions/${versionId}/process/complete`, { method: "POST", body: fd });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `Upload failed (${r.status})`);

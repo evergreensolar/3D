@@ -9,11 +9,14 @@ import { MONTHS, formatHour, istDate } from "@/lib/time";
 import { ShadingChart } from "./ShadingChart";
 import { GenerationPanel } from "./GenerationPanel";
 import { instantOutputKw, type EnergyEstimate } from "@/lib/energy/model";
+import { deserializePanels, type Panel, type PanelsFile } from "@/lib/scene/panels";
 
 const Scene3D = dynamic(() => import("./Scene3D"), { ssr: false });
 
 export interface DesignViewerProps {
   modelUrl: string;
+  /** panels.json from processing (exact tagged/detected panels). */
+  panelsUrl?: string | null;
   lat: number;
   lng: number;
   northOffsetDeg: number;
@@ -41,6 +44,18 @@ export function DesignViewer(p: DesignViewerProps) {
   const [sun, setSun] = useState<SunResult | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
   const [normals, setNormals] = useState<[number, number, number][]>([]);
+  const [weights, setWeights] = useState<number[]>([]);
+  // undefined = still loading panels.json; null = none (detect from model)
+  const [panels, setPanels] = useState<Panel[] | null | undefined>(p.panelsUrl ? undefined : null);
+  useEffect(() => {
+    if (!p.panelsUrl) { setPanels(null); return; }
+    let live = true;
+    fetch(p.panelsUrl)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: PanelsFile | null) => { if (live) setPanels(j?.panels?.length ? deserializePanels(j) : null); })
+      .catch(() => { if (live) setPanels(null); });
+    return () => { live = false; };
+  }, [p.panelsUrl]);
   const [error, setError] = useState<string | null>(null);
   const compassRef = useRef<HTMLDivElement>(null);
 
@@ -48,7 +63,7 @@ export function DesignViewer(p: DesignViewerProps) {
   const date = useMemo(() => istDate(SIM_YEAR, month, day, hour), [month, day, hour]);
   const opts = useMemo(() => ({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg }), [p.lat, p.lng, p.northOffsetDeg]);
   const outputKw = sun && p.kwp && normals.length
-    ? instantOutputKw({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, date, month, normals, fractions: sun.fractions, kwp: p.kwp })
+    ? instantOutputKw({ lat: p.lat, lng: p.lng, northOffsetDeg: p.northOffsetDeg, date, month, normals, weights, fractions: sun.fractions, kwp: p.kwp })
     : null;
   const activePreset = DATE_PRESETS.find((d) => d.month === month && d.day === day)?.id;
 
@@ -87,15 +102,16 @@ export function DesignViewer(p: DesignViewerProps) {
       <div className="relative min-h-[46vh] flex-1 bg-sky-200 lg:min-h-0">
         <ErrorCatcher onError={setError}>
           <Suspense fallback={null}>
-            <Scene3D
+            {panels !== undefined && <Scene3D
               url={p.modelUrl}
               opts={opts}
+              panels={panels}
               date={date}
               highlight={highlight}
               onSun={setSun}
-              onReady={(i) => { setPanelCount(i.panelCount); setNormals(i.normals); }}
+              onReady={(i) => { setPanelCount(i.panelCount); setNormals(i.normals); setWeights(i.weights); }}
               onHeading={onHeading}
-            />
+            />}
           </Suspense>
         </ErrorCatcher>
         <LoadingOverlay done={panelCount !== null} error={error} />

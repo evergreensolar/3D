@@ -9,6 +9,7 @@ import { logEvent } from "@/lib/projects";
 import type { SnapshotMeta } from "./types";
 import type { EnergyEstimate } from "@/lib/energy/model";
 import type { Layout } from "@/lib/scene/layout";
+import type { PanelsFile } from "@/lib/scene/panels";
 
 /** A version left "processing" this long (closed browser, crashed worker) can be claimed again. */
 export const STALE_MS = 4 * 60_000;
@@ -40,6 +41,8 @@ export interface FinalizeInput {
   energy: EnergyEstimate;
   layout: Layout;
   panelCount: number;
+  totalWp: number | null;
+  panelsFile: PanelsFile;
   bbox: { min: number[]; max: number[] };
   log: string[];
 }
@@ -67,7 +70,8 @@ export async function finalizeVersion(versionId: string, r: FinalizeInput) {
     where: { id: found.projectId },
     data: {
       panelCount: r.panelCount,
-      systemSizeKw: found.project.panelWattage ? Math.round(r.panelCount * found.project.panelWattage) / 1000 : null,
+      // Sum of each panel's rating (tagged Wp, else the project's Wp).
+      systemSizeKw: r.totalWp ? Math.round(r.totalWp) / 1000 : null,
       structureHeightM: r.layout.structureHeightM,
       structureType: r.layout.structureType,
     },
@@ -95,13 +99,16 @@ export async function finalizeVersion(versionId: string, r: FinalizeInput) {
     project, version: { ...version, processedAt }, images, summary: r.summary,
     liveUrl: `${appUrl}/p/${project.shareToken}`, detectedPanelCount: r.panelCount, energy: r.energy, layout: r.layout,
   });
+  const panelsKey = keys.panels(project.id, version.number);
+  await s.put(panelsKey, Buffer.from(JSON.stringify(r.panelsFile)), { contentType: "application/json" });
+
   const reportKey = keys.report(project.id, version.number);
   await s.put(reportKey, pdf, { contentType: "application/pdf" });
 
   await db.designVersion.update({
     where: { id: versionId },
     data: {
-      status: "READY", modelKey, modelBytes: glb.byteLength, reportKey, snapshots: snapMeta,
+      status: "READY", modelKey, panelsKey, modelBytes: glb.byteLength, reportKey, snapshots: snapMeta,
       shadingSummary: r.summary as unknown as Prisma.InputJsonValue, detectedPanelCount: r.panelCount,
       energyEstimate: r.energy as unknown as Prisma.InputJsonValue, layout: r.layout as unknown as Prisma.InputJsonValue,
       bbox: r.bbox, processedAt, processingError: null, processingLog: r.log.join("\n").slice(0, 20000),

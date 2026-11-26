@@ -82,3 +82,27 @@ test("no panels → report data stays finite", async () => {
   const e = estimateEnergy({ lat: LAT, lng: LNG, northOffsetDeg: 0, panels: [], shadeAt: () => [] });
   assert.ok(Number.isFinite(e.annual.clean) && Number.isFinite(e.performanceRatio));
 });
+
+test("designer tags decide the panels and their Wp", async () => {
+  const { nodePath, nodeAtPath } = await import("@/lib/scene/panels");
+  const root = await loadSample();
+  root.updateMatrixWorld(true);
+  const auto = detectPanels(root);
+  assert.ok(auto.every((p) => p.path !== undefined), "name-detected panels carry a node path");
+  const tags = auto.slice(0, 3).map((p, i) => ({ path: p.path!, wp: i === 0 ? 550 : 615 }));
+  const tagged = detectPanels(root, tags);
+  assert.equal(tagged.length, 3);
+  assert.deepEqual(tagged.map((p) => p.wp).sort(), [550, 615, 615]);
+  const n = nodeAtPath(root, tags[1].path)!;
+  assert.equal(nodePath(root, n), tags[1].path, "paths round-trip");
+});
+
+test("panels named 'Module' are recognised", async () => {
+  const root = await loadSample();
+  let k = 0;
+  root.traverse((o) => { if (/Solar/i.test(o.name) || /Solar/i.test(o.userData?.name ?? "")) { o.name = `WAAREE_615_Module#${++k}`; o.userData = {}; } });
+  root.updateMatrixWorld(true);
+  const panels = detectPanels(root);
+  assert.equal(panels.length, 12);
+  assert.ok(panels[0].name.includes("Module"));
+});

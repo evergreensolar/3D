@@ -19,6 +19,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       lat: v.project.latitude,
       lng: v.project.longitude,
       northOffsetDeg: v.project.northOffsetDeg,
+      tags: (v.panelTags as { panels?: unknown[] } | null)?.panels ?? null,
+      defaultWp: v.project.panelWattage,
     },
   });
 }

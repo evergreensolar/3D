@@ -8,6 +8,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { DesignStage, type SunResult } from "@/lib/scene/stage";
+import type { Panel } from "@/lib/scene/panels";
 
 export interface StageOpts {
   lat: number;
@@ -18,15 +19,17 @@ export interface StageOpts {
 export interface Scene3DProps {
   url: string;
   opts: StageOpts;
+  /** Exact panels from processing; null → detect from the model. */
+  panels?: Panel[] | null;
   date: Date;
   highlight: boolean;
   onSun: (r: SunResult) => void;
-  onReady: (info: { panelCount: number; normals: [number, number, number][] }) => void;
+  onReady: (info: { panelCount: number; normals: [number, number, number][]; weights: number[] }) => void;
   /** Receives the camera's true compass heading (degrees) whenever the view changes. */
   onHeading?: (deg: number) => void;
 }
 
-function StageNode({ url, opts, date, highlight, onSun, onReady, onHeading }: Scene3DProps) {
+function StageNode({ url, opts, panels, date, highlight, onSun, onReady, onHeading }: Scene3DProps) {
   const gltf = useLoader(GLTFLoader, url, (loader) => {
     const draco = new DRACOLoader();
     draco.setDecoderPath("/draco/");
@@ -37,7 +40,7 @@ function StageNode({ url, opts, date, highlight, onSun, onReady, onHeading }: Sc
   const stage = useMemo(() => {
     const big = gl.capabilities.maxTextureSize >= 8192 && !/Mobi|Android/i.test(navigator.userAgent);
     // Clone: the stage re-parents and mutates the model, and React may build this twice in development.
-    return new DesignStage(gltf.scene.clone(true), { ...opts, shadowMapSize: big ? 4096 : 2048 });
+    return new DesignStage(gltf.scene.clone(true), { ...opts, panels, shadowMapSize: big ? 4096 : 2048 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gltf]);
   useEffect(() => () => stage.dispose(), [stage]);
@@ -56,7 +59,11 @@ function StageNode({ url, opts, date, highlight, onSun, onReady, onHeading }: Sc
       c.minDistance = Math.max(1, stage.radius * 0.08);
       c.update();
     }
-    onReady({ panelCount: stage.panels.length, normals: stage.panels.map((x) => [x.normal.x, x.normal.y, x.normal.z] as [number, number, number]) });
+    onReady({
+      panelCount: stage.panels.length,
+      normals: stage.panels.map((x) => [x.normal.x, x.normal.y, x.normal.z] as [number, number, number]),
+      weights: stage.panels.map((x) => x.wp ?? 1),
+    });
     invalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, controls]);
